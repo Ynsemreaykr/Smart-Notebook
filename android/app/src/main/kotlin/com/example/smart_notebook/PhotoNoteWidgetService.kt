@@ -40,7 +40,7 @@ class PhotoNoteWidgetFactory(private val context: Context) : RemoteViewsService.
         // Group notes by category
         val grouped = LinkedHashMap<String, MutableList<PhotoNoteDataEntry>>()
         for (note in tempNotes) {
-            val cat = if (note.category.isBlank()) "Genel" else note.category
+            val cat = if (note.category.trim().isEmpty()) "Genel" else note.category.trim()
             grouped.putIfAbsent(cat, ArrayList())
             grouped[cat]!!.add(note)
         }
@@ -155,5 +155,12 @@ data class PhotoNoteWidgetRow(
     val isHeader: Boolean,
     val title: String,
     val noteId: String?,
+    val color: String
+)
+
+data class PhotoNoteDataEntry(
+    val id: String,
+    val title: String,
+    val category: String,
     val color: String
 )
