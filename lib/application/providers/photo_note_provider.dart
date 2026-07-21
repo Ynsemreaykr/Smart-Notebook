@@ -317,4 +317,36 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     await loadPhotoNotes();
   }
+
+  /// Clear all photo notes and custom categories completely
+  Future<void> clearAllNotes() async {
+    final box = Hive.box(_boxName);
+    
+    // Delete all local image files
+    for (var key in box.keys) {
+      if (key == 'categories_list') continue;
+      final data = box.get(key);
+      if (data is Map) {
+        final note = PhotoNote.fromMap(data);
+        try {
+          final file = File(note.imagePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          debugPrint('Error deleting note image: $e');
+        }
+      }
+    }
+    
+    // Clear entire database box
+    await box.clear();
+    _photoNotes = [];
+    _customCategories = [];
+    
+    // Reinitialize empty category list
+    await box.put('categories_list', []);
+    
+    await loadPhotoNotes();
+  }
 }

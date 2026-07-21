@@ -554,6 +554,37 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     );
   }
 
+  void _confirmClearAll() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Tümünü Temizle',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: const AppText(
+          'Tüm görsel notlar ve bölümler kalıcı olarak silinecektir. Bu işlem geri alınamaz.',
+          styleType: AppTextStyleType.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<PhotoNoteProvider>().clearAllNotes();
+            },
+            child: AppText('Tümünü Sil', styleType: AppTextStyleType.label, color: AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppContainer(
@@ -576,6 +607,11 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
               icon: const Icon(Icons.add_photo_alternate_rounded),
               tooltip: 'Yeni Not Ekle',
               onPressed: _showAddEditSheet,
+            ),
+            IconButton(
+              icon: Icon(Icons.delete_sweep_rounded, color: AppColors.error),
+              tooltip: 'Tümünü Temizle',
+              onPressed: _confirmClearAll,
             ),
             AppSpacing.gapWSm,
           ],
