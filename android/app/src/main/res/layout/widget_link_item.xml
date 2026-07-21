@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="40dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp">
+
+    <!-- Colored accent bar (Using FrameLayout since View is forbidden in RemoteViews) -->
+    <FrameLayout
+        android:id="@+id/link_item_accent"
+        android:layout_width="3dp"
+        android:layout_height="24dp"
+        android:background="#7C83E8"
+        android:layout_marginEnd="8dp" />
+
+    <!-- Label text -->
+    <TextView
+        android:id="@+id/link_item_label"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="#E0E3FF"
+        android:textSize="12sp"
+        android:ellipsize="end"
+        android:maxLines="1" />
+
+</LinearLayout>

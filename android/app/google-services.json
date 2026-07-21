@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "918229000552",
+    "project_id": "smart-notebook-9096c",
+    "storage_bucket": "smart-notebook-9096c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:918229000552:android:772d0f35f87ca5231136dd",
+        "android_client_info": {
+          "package_name": "com.example.smart_notebook"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "918229000552-uuanj59fihcsu7vp66etcqcfm2dokec7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.smart_notebook",
+            "certificate_hash": "d21a2c332de216825fbf675dacd76fb48ff1d922"
+          }
+        },
+        {
+          "client_id": "918229000552-jfhosjoh4o6cgtjjem7cdotl912ahi7e.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC_Ju3vAF8WxQTaX6OPS2zLHQJoAjEjA8c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "918229000552-jfhosjoh4o6cgtjjem7cdotl912ahi7e.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
