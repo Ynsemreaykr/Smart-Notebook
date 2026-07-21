@@ -395,6 +395,76 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     );
   }
 
+  void _showAddCategoryDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Yeni Bölüm Ekle',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Bölüm Adı (örn: Coğrafya)',
+            prefixIcon: Icon(Icons.folder_open_rounded),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                context.read<PhotoNoteProvider>().addCategory(name);
+              }
+              Navigator.pop(ctx);
+            },
+            child: AppText('Ekle', styleType: AppTextStyleType.label, color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteCategory(String folderName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Bölümü Sil',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: AppText(
+          '"$folderName" bölümü ve içindeki tüm görsel notlar silinecektir. Bu işlem geri alınamaz.',
+          styleType: AppTextStyleType.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<PhotoNoteProvider>().deleteCategory(folderName);
+            },
+            child: AppText('Sil', styleType: AppTextStyleType.label, color: AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppContainer(
@@ -408,6 +478,11 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
             styleOverride: TextStyle(fontWeight: FontWeight.bold),
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.create_new_folder_rounded),
+              tooltip: 'Yeni Bölüm Ekle',
+              onPressed: _showAddCategoryDialog,
+            ),
             IconButton(
               icon: const Icon(Icons.add_photo_alternate_rounded),
               tooltip: 'Yeni Not Ekle',
@@ -423,12 +498,13 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
             }
 
             final allNotes = provider.photoNotes;
+            final folders = ['Tüm Notlar', ...provider.allCategories];
 
-            if (allNotes.isEmpty) {
+            if (allNotes.isEmpty && provider.customCategories.isEmpty) {
               return const EmptyStateWidget(
                 icon: Icons.folder_open_rounded,
                 title: 'Bölüm Bulunmamaktadır',
-                subtitle: 'Görsel ders notlarınızı ders bazlı (Coğrafya, Tarih vb.) sınıflandırmak için ilk notunuzu ekleyin. Notlar otomatik olarak ilgili bölüm klasörleri altında toplanacaktır.',
+                subtitle: 'Görsel ders notlarınızı ders bazlı (Coğrafya, Tarih vb.) sınıflandırmak için ilk notunuzu ekleyin veya yeni boş bir bölüm klasörü oluşturun.',
               );
             }
 
@@ -438,12 +514,6 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
               final cat = note.category.trim().isEmpty ? 'Genel' : note.category.trim();
               categoriesMap.putIfAbsent(cat, () => []).add(note);
             }
-
-            // Create folders list
-            final List<String> sortedCategories = categoriesMap.keys.toList()..sort();
-            
-            // Add 'Tüm Notlar' at the beginning
-            final folders = ['Tüm Notlar', ...sortedCategories];
 
             return GridView.builder(
               padding: const EdgeInsets.all(16.0),
@@ -482,44 +552,62 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                       padding: const EdgeInsets.all(16.0),
                       borderColor: folderColor.withOpacity(0.35),
                       shadowColor: folderColor,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Stack(
                         children: [
-                          // Folder Icon Header
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: folderColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(AppRadius.medium),
-                              border: Border.all(color: folderColor.withOpacity(0.3), width: 1),
-                            ),
-                            child: Icon(
-                              folderIcon,
-                              color: folderColor,
-                              size: 26,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Folder Icon Header
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: folderColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(AppRadius.medium),
+                                  border: Border.all(color: folderColor.withOpacity(0.3), width: 1),
+                                ),
+                                child: Icon(
+                                  folderIcon,
+                                  color: folderColor,
+                                  size: 26,
+                                ),
+                              ),
+                              const Spacer(),
+                              
+                              // Folder Title
+                              AppText(
+                                folderName,
+                                styleType: AppTextStyleType.bodyLarge,
+                                styleOverride: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              
+                              // Count badge
+                              AppText(
+                                '$noteCount Görsel Kart',
+                                styleType: AppTextStyleType.caption,
+                                color: AppColors.textSecondary,
+                              ),
+                            ],
                           ),
-                          const Spacer(),
-                          
-                          // Folder Title
-                          AppText(
-                            folderName,
-                            styleType: AppTextStyleType.bodyLarge,
-                            styleOverride: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
+                          if (folderName != 'Tüm Notlar')
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: IconButton(
+                                  icon: Icon(Icons.delete_outline_rounded, color: AppColors.error.withOpacity(0.85), size: 19),
+                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(4),
+                                  onPressed: () => _confirmDeleteCategory(folderName),
+                                ),
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          
-                          // Count badge
-                          AppText(
-                            '$noteCount Görsel Kart',
-                            styleType: AppTextStyleType.caption,
-                            color: AppColors.textSecondary,
-                          ),
                         ],
                       ),
                     ),

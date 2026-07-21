@@ -11,12 +11,31 @@ class PhotoNoteProvider extends ChangeNotifier {
   final Uuid _uuid = const Uuid();
 
   List<PhotoNote> _photoNotes = [];
+  List<String> _customCategories = [];
   bool _isLoading = false;
   String _selectedCategory = 'Tümü';
 
   List<PhotoNote> get photoNotes => _photoNotes;
+  List<String> get customCategories => _customCategories;
   bool get isLoading => _isLoading;
   String get selectedCategory => _selectedCategory;
+
+  /// Get list of all categories combined (custom + notes)
+  List<String> get allCategories {
+    final Set<String> categoriesSet = {};
+    for (var cat in _customCategories) {
+      if (cat.trim().isNotEmpty) {
+        categoriesSet.add(cat.trim());
+      }
+    }
+    for (var note in _photoNotes) {
+      if (note.category.trim().isNotEmpty) {
+        categoriesSet.add(note.category.trim());
+      }
+    }
+    final list = categoriesSet.toList()..sort();
+    return list;
+  }
 
   /// Get list of filtered photo notes based on selected category
   List<PhotoNote> get filteredNotes {
@@ -29,11 +48,7 @@ class PhotoNoteProvider extends ChangeNotifier {
   /// Get list of all unique categories present in photo notes
   List<String> get categories {
     final Set<String> uniqueCategories = {'Tümü'};
-    for (var note in _photoNotes) {
-      if (note.category.trim().isNotEmpty) {
-        uniqueCategories.add(note.category.trim());
-      }
-    }
+    uniqueCategories.addAll(allCategories);
     return uniqueCategories.toList()..sort((a, b) {
       if (a == 'Tümü') return -1;
       if (b == 'Tümü') return 1;
@@ -46,7 +61,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Load photo notes from Hive
+  /// Load photo notes and categories from Hive
   Future<void> loadPhotoNotes() async {
     _isLoading = true;
     notifyListeners();
@@ -56,10 +71,19 @@ class PhotoNoteProvider extends ChangeNotifier {
       final List<PhotoNote> loaded = [];
 
       for (var key in box.keys) {
+        if (key == 'categories_list') continue;
         final data = box.get(key);
         if (data is Map) {
           loaded.add(PhotoNote.fromMap(data));
         }
+      }
+
+      // Load custom categories
+      final savedCats = box.get('categories_list');
+      if (savedCats != null) {
+        _customCategories = List<String>.from(savedCats);
+      } else {
+        _customCategories = [];
       }
 
       // Sort by updatedAt (newest first)
@@ -212,5 +236,56 @@ class PhotoNoteProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error updating photo note widget: $e');
     }
+  }
+
+  /// Add an empty category / folder
+  Future<void> addCategory(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+
+    if (!_customCategories.contains(trimmed)) {
+      _customCategories.add(trimmed);
+      final box = Hive.box(_boxName);
+      await box.put('categories_list', _customCategories);
+      notifyListeners();
+    }
+  }
+
+  /// Delete a category / folder and all notes inside it
+  Future<void> deleteCategory(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+
+    _customCategories.remove(trimmed);
+    final box = Hive.box(_boxName);
+    await box.put('categories_list', _customCategories);
+
+    // Delete all notes belonging to this category
+    final keysToDelete = [];
+    for (var key in box.keys) {
+      if (key == 'categories_list') continue;
+      final data = box.get(key);
+      if (data is Map) {
+        final note = PhotoNote.fromMap(data);
+        if (note.category.trim() == trimmed) {
+          keysToDelete.add(key);
+          // Delete image file if it exists
+          try {
+            final file = File(note.imagePath);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (e) {
+            debugPrint('Error deleting note image: $e');
+          }
+        }
+      }
+    }
+
+    for (var key in keysToDelete) {
+      await box.delete(key);
+    }
+
+    await loadPhotoNotes();
   }
 }
