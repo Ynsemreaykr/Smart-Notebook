@@ -20,20 +20,9 @@ class PhotoNoteProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String get selectedCategory => _selectedCategory;
 
-  /// Get list of all categories combined (custom + notes)
+  /// Get list of all categories
   List<String> get allCategories {
-    final Set<String> categoriesSet = {};
-    for (var cat in _customCategories) {
-      if (cat.trim().isNotEmpty) {
-        categoriesSet.add(cat.trim());
-      }
-    }
-    for (var note in _photoNotes) {
-      if (note.category.trim().isNotEmpty) {
-        categoriesSet.add(note.category.trim());
-      }
-    }
-    final list = categoriesSet.toList()..sort();
+    final list = _customCategories.toList()..sort();
     return list;
   }
 
@@ -47,13 +36,8 @@ class PhotoNoteProvider extends ChangeNotifier {
 
   /// Get list of all unique categories present in photo notes
   List<String> get categories {
-    final Set<String> uniqueCategories = {'Tümü'};
-    uniqueCategories.addAll(allCategories);
-    return uniqueCategories.toList()..sort((a, b) {
-      if (a == 'Tümü') return -1;
-      if (b == 'Tümü') return 1;
-      return a.compareTo(b);
-    });
+    final list = _customCategories.toList()..sort();
+    return list;
   }
 
   set selectedCategory(String category) {
@@ -243,12 +227,51 @@ class PhotoNoteProvider extends ChangeNotifier {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
 
-    if (!_customCategories.contains(trimmed)) {
+    final exists = _customCategories.any((cat) => cat.toLowerCase() == trimmed.toLowerCase());
+    if (!exists) {
       _customCategories.add(trimmed);
       final box = Hive.box(_boxName);
       await box.put('categories_list', _customCategories);
       notifyListeners();
     }
+  }
+
+  /// Rename an existing category/folder and update all containing notes
+  Future<void> renameCategory(String oldName, String newName) async {
+    final oldTrimmed = oldName.trim();
+    final newTrimmed = newName.trim();
+    if (oldTrimmed.isEmpty || newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
+
+    // Check if new name already exists in categories list (case-insensitive check)
+    final exists = _customCategories.any((cat) => cat.toLowerCase() == newTrimmed.toLowerCase() && cat != oldTrimmed);
+    if (exists) return;
+
+    // Rename in list
+    final index = _customCategories.indexOf(oldTrimmed);
+    if (index != -1) {
+      _customCategories[index] = newTrimmed;
+    } else {
+      _customCategories.remove(oldTrimmed);
+      _customCategories.add(newTrimmed);
+    }
+
+    final box = Hive.box(_boxName);
+    await box.put('categories_list', _customCategories);
+
+    // Update all notes with old category
+    for (var key in box.keys) {
+      if (key == 'categories_list') continue;
+      final data = box.get(key);
+      if (data is Map) {
+        final note = PhotoNote.fromMap(data);
+        if (note.category.trim() == oldTrimmed) {
+          final updatedNote = note.copyWith(category: newTrimmed);
+          await box.put(key, updatedNote.toMap());
+        }
+      }
+    }
+
+    await loadPhotoNotes();
   }
 
   /// Delete a category / folder and all notes inside it

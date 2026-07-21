@@ -96,7 +96,8 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
 
   void _showAddEditSheet() {
     final titleController = TextEditingController();
-    final categoryController = TextEditingController();
+    final categories = context.read<PhotoNoteProvider>().customCategories;
+    String selectedCategory = categories.isNotEmpty ? categories.first : '';
     String selectedColor = _presetColors.first;
     File? selectedImage;
 
@@ -111,11 +112,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final activeProvider = Provider.of<PhotoNoteProvider>(ctx, listen: false);
-            final uniqueCategories = activeProvider.photoNotes
-                .map((n) => n.category.trim())
-                .where((c) => c.isNotEmpty)
-                .toSet()
-                .toList();
+            final uniqueCategories = activeProvider.customCategories;
 
             Future<void> pickImage(ImageSource source) async {
               try {
@@ -265,42 +262,50 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     ),
                     AppSpacing.gapHMd,
 
-                    // Category
-                    TextField(
-                      controller: categoryController,
-                      decoration: InputDecoration(
-                        labelText: 'Ders / Konu Bölümü (örn: Coğrafya)',
-                        prefixIcon: const Icon(Icons.bookmark_border_rounded),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                      ),
-                    ),
-                    if (uniqueCategories.isNotEmpty) ...[
-                      AppSpacing.gapHXs,
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: uniqueCategories.map((cat) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ChoiceChip(
-                                label: Text(cat),
-                                selected: categoryController.text == cat,
-                                labelStyle: TextStyle(
-                                  color: categoryController.text == cat ? Colors.white : AppColors.textPrimary,
-                                  fontSize: 12,
-                                ),
-                                selectedColor: AppColors.primary,
-                                onSelected: (selected) {
-                                  if (selected) {
-                                    setModalState(() {
-                                      categoryController.text = cat;
-                                    });
-                                  }
-                                },
-                              ),
-                            );
-                          }).toList(),
+                    // Category Dropdown
+                    if (uniqueCategories.isEmpty) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.error.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(AppRadius.medium),
                         ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: AppColors.error),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: AppText(
+                                'Lütfen önce ana ekrandan yeni bir bölüm klasörü oluşturun.',
+                                styleType: AppTextStyleType.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else ...[
+                      DropdownButtonFormField<String>(
+                        value: selectedCategory.isEmpty || !uniqueCategories.contains(selectedCategory)
+                            ? uniqueCategories.first
+                            : selectedCategory,
+                        decoration: InputDecoration(
+                          labelText: 'Ders / Bölüm Seçin',
+                          prefixIcon: const Icon(Icons.bookmark_border_rounded),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                        ),
+                        items: uniqueCategories.map((cat) {
+                          return DropdownMenuItem<String>(
+                            value: cat,
+                            child: Text(cat),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setModalState(() {
+                              selectedCategory = val;
+                            });
+                          }
+                        },
                       ),
                     ],
                     AppSpacing.gapHMd,
@@ -369,12 +374,22 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                           return;
                         }
 
+                        if (selectedCategory.isEmpty) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('Lütfen önce bir bölüm oluşturun.'),
+                              backgroundColor: Colors.amber,
+                            ),
+                          );
+                          return;
+                        }
+
                         Navigator.pop(ctx);
 
                         await activeProvider.addPhotoNote(
                           title: titleController.text,
                           imageFile: selectedImage!,
-                          category: categoryController.text.trim().isEmpty ? 'Genel' : categoryController.text.trim(),
+                          category: selectedCategory,
                           color: selectedColor,
                         );
                       },
@@ -465,6 +480,80 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     );
   }
 
+  void _showRenameCategoryDialog(String oldName) {
+    final controller = TextEditingController(text: oldName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Bölümü Düzenle',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Yeni Bölüm Adı',
+            prefixIcon: Icon(Icons.folder_open_rounded),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty && newName != oldName) {
+                context.read<PhotoNoteProvider>().renameCategory(oldName, newName);
+              }
+              Navigator.pop(ctx);
+            },
+            child: AppText('Kaydet', styleType: AppTextStyleType.label, color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFolderOptions(String folderName) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.medium)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: const AppText('Bölümü Düzenle (Yeniden Adlandır)', styleType: AppTextStyleType.bodyMedium),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showRenameCategoryDialog(folderName);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                title: AppText('Bölümü Sil', styleType: AppTextStyleType.bodyMedium, color: AppColors.error),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDeleteCategory(folderName);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppContainer(
@@ -498,13 +587,13 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
             }
 
             final allNotes = provider.photoNotes;
-            final folders = ['Tüm Notlar', ...provider.allCategories];
+            final folders = provider.allCategories;
 
-            if (allNotes.isEmpty && provider.customCategories.isEmpty) {
+            if (folders.isEmpty) {
               return const EmptyStateWidget(
                 icon: Icons.folder_open_rounded,
                 title: 'Bölüm Bulunmamaktadır',
-                subtitle: 'Görsel ders notlarınızı ders bazlı (Coğrafya, Tarih vb.) sınıflandırmak için ilk notunuzu ekleyin veya yeni boş bir bölüm klasörü oluşturun.',
+                subtitle: 'Görsel ders notlarınızı sınıflandırmak için lütfen üst bardaki klasör ekleme butonunu kullanarak ilk bölüm klasörünüzü oluşturun.',
               );
             }
 
@@ -529,9 +618,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                 final folderName = folders[index];
                 
                 // Determine number of notes in this folder
-                final noteCount = folderName == 'Tüm Notlar' 
-                    ? allNotes.length 
-                    : categoriesMap[folderName]?.length ?? 0;
+                final noteCount = categoriesMap[folderName]?.length ?? 0;
 
                 final folderColor = _getCategoryColor(folderName);
                 final folderIcon = _getCategoryIcon(folderName);
@@ -594,20 +681,19 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                               ),
                             ],
                           ),
-                          if (folderName != 'Tüm Notlar')
-                            Positioned(
-                              top: -4,
-                              right: -4,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: IconButton(
-                                  icon: Icon(Icons.delete_outline_rounded, color: AppColors.error.withOpacity(0.85), size: 19),
-                                  constraints: const BoxConstraints(),
-                                  padding: const EdgeInsets.all(4),
-                                  onPressed: () => _confirmDeleteCategory(folderName),
-                                ),
+                          Positioned(
+                            top: -4,
+                            right: -4,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: IconButton(
+                                icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.all(4),
+                                onPressed: () => _showFolderOptions(folderName),
                               ),
                             ),
+                          ),
                         ],
                       ),
                     ),
