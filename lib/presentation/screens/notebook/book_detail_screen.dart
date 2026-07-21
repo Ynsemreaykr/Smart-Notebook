@@ -251,6 +251,34 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     }
   }
 
+  void _confirmDeletePage(String pageId, String pageTitle) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text('Sayfayı Sil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text(
+          '"$pageTitle" sayfasını silmek istiyor musunuz?',
+          style: const TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<PageProvider>().deletePage(pageId);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _toggleSelection(String pageId) {
     setState(() {
       if (_selectedPageIds.contains(pageId)) {
@@ -510,7 +538,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                                 }
                               },
                               onDelete: () {
-                                context.read<PageProvider>().deletePage(page.id);
+                                _confirmDeletePage(page.id, page.title);
                               },
                               onShareAsPdf: () {
                                 _exportSinglePage(page);

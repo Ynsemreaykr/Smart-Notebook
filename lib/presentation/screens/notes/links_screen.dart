@@ -111,6 +111,35 @@ class _LinksScreenState extends State<LinksScreen> {
     _saveBookmarks();
   }
 
+  // Confirm Delete Link
+  void _confirmDeleteLink(String id, String label) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Bağlantıyı Sil',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: AppText('"$label" bağlantısını silmek istiyor musunuz?', styleType: AppTextStyleType.bodyMedium),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteLink(id);
+            },
+            child: AppText('Sil', styleType: AppTextStyleType.label, color: AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Delete link
   void _deleteLink(String id) {
     setState(() {
@@ -356,7 +385,7 @@ class _LinksScreenState extends State<LinksScreen> {
                 title: const AppText('Bağlantıyı Sil', styleType: AppTextStyleType.bodyMedium, color: Colors.redAccent),
                 onTap: () {
                   Navigator.pop(context);
-                  _deleteLink(bookmark['id'] ?? '');
+                  _confirmDeleteLink(bookmark['id'] ?? '', bookmark['label'] ?? '');
                 },
               ),
             ],

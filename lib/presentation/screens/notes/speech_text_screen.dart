@@ -278,12 +278,36 @@ class _SpeechTextScreenState extends State<SpeechTextScreen> with SingleTickerPr
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    Navigator.pop(context);
-                    await context.read<NoteProvider>().deleteVoiceNote(note.id);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Ses notu silindi.'), backgroundColor: Colors.redAccent),
-                      );
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: AppColors.surface,
+                        title: const AppText(
+                          'Ses Notunu Sil',
+                          styleType: AppTextStyleType.headingMedium,
+                          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        content: AppText('"${note.title}" ses notunu silmek istiyor musunuz?', styleType: AppTextStyleType.bodyMedium),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: AppText('Sil', styleType: AppTextStyleType.label, color: AppColors.error),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && mounted) {
+                      Navigator.pop(context);
+                      await context.read<NoteProvider>().deleteVoiceNote(note.id);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Ses notu silindi.'), backgroundColor: Colors.redAccent),
+                        );
+                      }
                     }
                   },
                   icon: const Icon(Icons.delete, size: 16),
