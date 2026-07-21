@@ -13,6 +13,7 @@ import 'package:flutter/services.dart';
 import 'presentation/screens/notes/links_screen.dart';
 import 'presentation/screens/planner/planner_screen.dart';
 import 'presentation/screens/photo_notes/photo_notes_screen.dart';
+import 'presentation/screens/photo_notes/photo_note_viewer_screen.dart';
 
 class SmartNotebookApp extends StatefulWidget {
   const SmartNotebookApp({super.key});
@@ -46,6 +47,9 @@ class _SmartNotebookAppState extends State<SmartNotebookApp> {
           _navigateToNotes();
         } else if (screen == 'photo_notes') {
           _navigateToPhotoNotes();
+        } else if (screen != null && screen.startsWith('photo_note_view:')) {
+          final noteId = screen.split(':').last;
+          _navigateToPhotoNoteViewer(noteId);
         }
       }
     });
@@ -79,6 +83,9 @@ class _SmartNotebookAppState extends State<SmartNotebookApp> {
         _navigateToNotes();
       } else if (screen == 'photo_notes') {
         _navigateToPhotoNotes();
+      } else if (screen != null && screen.startsWith('photo_note_view:')) {
+        final noteId = screen.split(':').last;
+        _navigateToPhotoNoteViewer(noteId);
       }
     } catch (e) {
       debugPrint("Error checking launch screen: $e");
@@ -106,6 +113,12 @@ class _SmartNotebookAppState extends State<SmartNotebookApp> {
   void _navigateToPhotoNotes() {
     _navigatorKey.currentState?.push(
       MaterialPageRoute(builder: (_) => const PhotoNotesScreen()),
+    );
+  }
+
+  void _navigateToPhotoNoteViewer(String noteId) {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute(builder: (_) => PhotoNoteViewerScreen(noteId: noteId)),
     );
   }
 

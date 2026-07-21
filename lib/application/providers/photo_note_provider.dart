@@ -196,14 +196,15 @@ class PhotoNoteProvider extends ChangeNotifier {
   /// Update Android Home Widget data
   Future<void> _updateWidget() async {
     try {
-      if (_photoNotes.isNotEmpty) {
-        final latestNote = _photoNotes.first;
-        await HomeWidget.saveWidgetData<String>('photo_widget_title', latestNote.title);
-        await HomeWidget.saveWidgetData<String>('photo_widget_category', latestNote.category);
-      } else {
-        await HomeWidget.saveWidgetData<String>('photo_widget_title', 'Görsel Notlarım');
-        await HomeWidget.saveWidgetData<String>('photo_widget_category', '');
-      }
+      // Serialize all photo notes: id||title||category||color
+      final rawData = _photoNotes.map((note) {
+        final categoryText = note.category.isEmpty ? ' ' : note.category;
+        final colorText = note.color.isEmpty ? '#14B8A6' : note.color;
+        return '${note.id}||${note.title}||$categoryText||$colorText';
+      }).join('::');
+
+      await HomeWidget.saveWidgetData<String>('photo_notes_widget_data', rawData);
+
       await HomeWidget.updateWidget(
         name: 'PhotoNoteWidgetProvider',
         iOSName: 'PhotoNoteWidgetProvider',
