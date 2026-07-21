@@ -33,17 +33,19 @@ class PhotoNoteWidgetProvider : AppWidgetProvider() {
         super.onReceive(context, intent)
         if (intent.action == ACTION_OPEN_PHOTO_NOTE) {
             val noteId = intent.getStringExtra("note_id")
-            if (!noteId.isNullOrBlank()) {
-                // Launch MainActivity and navigate directly to the specific photo note viewer
-                val appIntent = context.packageManager
-                    .getLaunchIntentForPackage(context.packageName)
-                    ?.apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                        putExtra("open_screen", "photo_note_view:$noteId")
-                    }
-                if (appIntent != null) {
-                    context.startActivity(appIntent)
+            val openScreenExtra = if (!noteId.isNullOrBlank()) {
+                "photo_note_view:$noteId"
+            } else {
+                "photo_notes"
+            }
+            val appIntent = context.packageManager
+                .getLaunchIntentForPackage(context.packageName)
+                ?.apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    putExtra("open_screen", openScreenExtra)
                 }
+            if (appIntent != null) {
+                context.startActivity(appIntent)
             }
         }
     }
