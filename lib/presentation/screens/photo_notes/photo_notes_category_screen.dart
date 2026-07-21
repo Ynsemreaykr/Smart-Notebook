@@ -13,16 +13,17 @@ import '../../../widgets/common/app_container.dart';
 import '../../widgets/bounce_button.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/empty_state_widget.dart';
-import 'photo_notes_category_screen.dart';
+import 'photo_note_viewer_screen.dart';
 
-class PhotoNotesScreen extends StatefulWidget {
-  const PhotoNotesScreen({super.key});
+class PhotoNotesCategoryScreen extends StatefulWidget {
+  final String category;
+  const PhotoNotesCategoryScreen({super.key, required this.category});
 
   @override
-  State<PhotoNotesScreen> createState() => _PhotoNotesScreenState();
+  State<PhotoNotesCategoryScreen> createState() => _PhotoNotesCategoryScreenState();
 }
 
-class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
+class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
   final ImagePicker _picker = ImagePicker();
 
   final List<String> _presetColors = [
@@ -36,14 +37,6 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     '#6B7280', // Grey
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PhotoNoteProvider>().loadPhotoNotes();
-    });
-  }
-
   Color _parseColor(String hex) {
     try {
       return Color(int.parse(hex.replaceFirst('#', '0xFF')));
@@ -52,53 +45,13 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     }
   }
 
-  IconData _getCategoryIcon(String category) {
-    final catLower = category.toLowerCase().trim();
-    if (catLower.contains('coğrafya') || catLower.contains('cografya') || catLower.contains('yer')) {
-      return Icons.map_rounded;
-    } else if (catLower.contains('tarih') || catLower.contains('kronoloji')) {
-      return Icons.history_edu_rounded;
-    } else if (catLower.contains('biyoloji') || catLower.contains('tıp') || catLower.contains('canlı')) {
-      return Icons.biotech_rounded;
-    } else if (catLower.contains('matematik') || catLower.contains('geometri') || catLower.contains('formül')) {
-      return Icons.calculate_rounded;
-    } else if (catLower.contains('fizik') || catLower.contains('kimya') || catLower.contains('fen') || catLower.contains('deney')) {
-      return Icons.science_rounded;
-    } else if (catLower.contains('edebiyat') || catLower.contains('türkçe') || catLower.contains('dil')) {
-      return Icons.menu_book_rounded;
-    } else if (catLower.contains('tümü') || catLower.contains('hepsi')) {
-      return Icons.grid_view_rounded;
-    } else {
-      return Icons.folder_open_rounded;
-    }
-  }
-
-  Color _getCategoryColor(String category) {
-    final catLower = category.toLowerCase().trim();
-    if (catLower.contains('coğrafya') || catLower.contains('cografya')) {
-      return const Color(0xFF0EA5E9); // Sky blue
-    } else if (catLower.contains('tarih')) {
-      return const Color(0xFFD97706); // Amber
-    } else if (catLower.contains('biyoloji')) {
-      return const Color(0xFF10B981); // Emerald
-    } else if (catLower.contains('matematik')) {
-      return const Color(0xFFEC4899); // Pink
-    } else if (catLower.contains('fizik') || catLower.contains('kimya')) {
-      return const Color(0xFF8B5CF6); // Purple
-    } else if (catLower.contains('edebiyat') || catLower.contains('türkçe')) {
-      return const Color(0xFFF43F5E); // Rose
-    } else if (catLower.contains('tümü')) {
-      return AppColors.primary;
-    } else {
-      return const Color(0xFF14B8A6); // Teal default
-    }
-  }
-
-  void _showAddEditSheet() {
-    final titleController = TextEditingController();
-    final categoryController = TextEditingController();
-    String selectedColor = _presetColors.first;
-    File? selectedImage;
+  void _showAddEditSheet({PhotoNote? note}) {
+    final titleController = TextEditingController(text: note?.title ?? '');
+    // Pre-fill with active category
+    final categoryController = TextEditingController(text: note?.category ?? widget.category);
+    String selectedColor = note?.color ?? _presetColors.first;
+    File? selectedImage = note != null ? File(note.imagePath) : null;
+    bool isEdit = note != null;
 
     showModalBottomSheet(
       context: context,
@@ -111,11 +64,6 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final activeProvider = Provider.of<PhotoNoteProvider>(ctx, listen: false);
-            final uniqueCategories = activeProvider.photoNotes
-                .map((n) => n.category.trim())
-                .where((c) => c.isNotEmpty)
-                .toSet()
-                .toList();
 
             Future<void> pickImage(ImageSource source) async {
               try {
@@ -148,10 +96,10 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const AppText(
-                          'Yeni Görsel Not',
+                        AppText(
+                          isEdit ? 'Notu Düzenle' : 'Yeni Görsel Not Ekle',
                           styleType: AppTextStyleType.headingMedium,
-                          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
@@ -258,51 +206,22 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     TextField(
                       controller: titleController,
                       decoration: InputDecoration(
-                        labelText: 'Başlık (örn: Türkiye\'nin Ovaları)',
+                        labelText: 'Başlık (örn: Ovalar Haritası)',
                         prefixIcon: const Icon(Icons.title_rounded),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
                       ),
                     ),
                     AppSpacing.gapHMd,
 
-                    // Category
+                    // Category (Read-only or prefilled)
                     TextField(
                       controller: categoryController,
                       decoration: InputDecoration(
-                        labelText: 'Ders / Konu Bölümü (örn: Coğrafya)',
+                        labelText: 'Ders / Bölüm',
                         prefixIcon: const Icon(Icons.bookmark_border_rounded),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
                       ),
                     ),
-                    if (uniqueCategories.isNotEmpty) ...[
-                      AppSpacing.gapHXs,
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: uniqueCategories.map((cat) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ChoiceChip(
-                                label: Text(cat),
-                                selected: categoryController.text == cat,
-                                labelStyle: TextStyle(
-                                  color: categoryController.text == cat ? Colors.white : AppColors.textPrimary,
-                                  fontSize: 12,
-                                ),
-                                selectedColor: AppColors.primary,
-                                onSelected: (selected) {
-                                  if (selected) {
-                                    setModalState(() {
-                                      categoryController.text = cat;
-                                    });
-                                  }
-                                },
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
                     AppSpacing.gapHMd,
 
                     // Color Picker
@@ -371,17 +290,27 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
 
                         Navigator.pop(ctx);
 
-                        await activeProvider.addPhotoNote(
-                          title: titleController.text,
-                          imageFile: selectedImage!,
-                          category: categoryController.text.trim().isEmpty ? 'Genel' : categoryController.text.trim(),
-                          color: selectedColor,
-                        );
+                        if (isEdit) {
+                          await activeProvider.updatePhotoNote(
+                            id: note!.id,
+                            title: titleController.text,
+                            category: categoryController.text,
+                            color: selectedColor,
+                            newImageFile: selectedImage!.path == note.imagePath ? null : selectedImage,
+                          );
+                        } else {
+                          await activeProvider.addPhotoNote(
+                            title: titleController.text,
+                            imageFile: selectedImage!,
+                            category: categoryController.text,
+                            color: selectedColor,
+                          );
+                        }
                       },
-                      child: const AppText(
-                        'Notu Kaydet',
+                      child: AppText(
+                        isEdit ? 'Güncellemeleri Kaydet' : 'Notu Kaydet',
                         styleType: AppTextStyleType.label,
-                        styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                        styleOverride: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
                       ),
                     ),
                     AppSpacing.gapHMd,
@@ -395,6 +324,69 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
     );
   }
 
+  void _showOptionsDialog(PhotoNote note) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.medium)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit_rounded),
+                title: const AppText('Düzenle', styleType: AppTextStyleType.bodyMedium),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showAddEditSheet(note: note);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                title: AppText('Sil', styleType: AppTextStyleType.bodyMedium, color: AppColors.error),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _confirmDelete(note);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDelete(PhotoNote note) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Sil',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: AppText('"${note.title}" ders notu silinecektir. Bu işlem geri alınamaz.', styleType: AppTextStyleType.bodyMedium),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<PhotoNoteProvider>().deletePhotoNote(note.id);
+            },
+            child: AppText('Sil', styleType: AppTextStyleType.label, color: AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppContainer(
@@ -402,16 +394,16 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: const AppText(
-            'Görsel Not Bölümleri',
+          title: AppText(
+            widget.category.isEmpty ? 'Genel Notlar' : widget.category,
             styleType: AppTextStyleType.headingLarge,
-            styleOverride: TextStyle(fontWeight: FontWeight.bold),
+            styleOverride: const TextStyle(fontWeight: FontWeight.bold),
           ),
           actions: [
             IconButton(
               icon: const Icon(Icons.add_photo_alternate_rounded),
               tooltip: 'Yeni Not Ekle',
-              onPressed: _showAddEditSheet,
+              onPressed: () => _showAddEditSheet(),
             ),
             AppSpacing.gapWSm,
           ],
@@ -422,117 +414,134 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final allNotes = provider.photoNotes;
+            // Filter notes for the active category
+            final notes = provider.photoNotes.where((note) {
+              if (widget.category == 'Tümü') return true;
+              return note.category.trim() == widget.category.trim();
+            }).toList();
 
-            if (allNotes.isEmpty) {
-              return const EmptyStateWidget(
-                icon: Icons.folder_open_rounded,
-                title: 'Bölüm Bulunmamaktadır',
-                subtitle: 'Görsel ders notlarınızı ders bazlı (Coğrafya, Tarih vb.) sınıflandırmak için ilk notunuzu ekleyin. Notlar otomatik olarak ilgili bölüm klasörleri altında toplanacaktır.',
-              );
-            }
+            return notes.isEmpty
+                ? EmptyStateWidget(
+                    icon: Icons.add_photo_alternate_rounded,
+                    title: 'Görsel Not Bulunmamaktadır',
+                    subtitle: '"${widget.category}" bölümüne ait ders görseli veya harita bulunmuyor. Yeni bir not eklemek için sağ üstteki butonu kullanabilirsiniz.',
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final double gridHeight = constraints.maxHeight;
+                        const double crossAxisSpacing = 12.0;
+                        const double mainAxisSpacing = 12.0;
+                        const int crossAxisCount = 2;
 
-            // Group notes by category
-            final Map<String, List<PhotoNote>> categoriesMap = {};
-            for (var note in allNotes) {
-              final cat = note.category.trim().isEmpty ? 'Genel' : note.category.trim();
-              categoriesMap.putIfAbsent(cat, () => []).add(note);
-            }
+                        // Calculate aspect ratio so exactly 6 rows can fit
+                        final double itemHeight = (gridHeight - (mainAxisSpacing * 5)) / 6.0;
+                        final double itemWidth = (constraints.maxWidth - crossAxisSpacing) / 2.0;
 
-            // Create folders list
-            final List<String> sortedCategories = categoriesMap.keys.toList()..sort();
-            
-            // Add 'Tüm Notlar' at the beginning
-            final folders = ['Tüm Notlar', ...sortedCategories];
+                        double childAspectRatio = itemWidth / itemHeight;
+                        if (childAspectRatio <= 0 || childAspectRatio > 3.0) {
+                          childAspectRatio = 0.72;
+                        }
 
-            return GridView.builder(
-              padding: const EdgeInsets.all(16.0),
-              physics: const BouncingScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 16.0,
-                mainAxisSpacing: 16.0,
-                childAspectRatio: 1.15,
-              ),
-              itemCount: folders.length,
-              itemBuilder: (context, index) {
-                final folderName = folders[index];
-                
-                // Determine number of notes in this folder
-                final noteCount = folderName == 'Tüm Notlar' 
-                    ? allNotes.length 
-                    : categoriesMap[folderName]?.length ?? 0;
-
-                final folderColor = _getCategoryColor(folderName);
-                final folderIcon = _getCategoryIcon(folderName);
-
-                return FadeSlideEntrance(
-                  delay: Duration(milliseconds: 50 * index),
-                  child: BounceButton(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => PhotoNotesCategoryScreen(category: folderName),
-                        ),
-                      );
-                    },
-                    child: AppCard(
-                      margin: EdgeInsets.zero,
-                      padding: const EdgeInsets.all(16.0),
-                      borderColor: folderColor.withOpacity(0.35),
-                      shadowColor: folderColor,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Folder Icon Header
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: folderColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(AppRadius.medium),
-                              border: Border.all(color: folderColor.withOpacity(0.3), width: 1),
-                            ),
-                            child: Icon(
-                              folderIcon,
-                              color: folderColor,
-                              size: 26,
-                            ),
+                        return GridView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: notes.length,
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            crossAxisSpacing: crossAxisSpacing,
+                            mainAxisSpacing: mainAxisSpacing,
+                            childAspectRatio: childAspectRatio,
                           ),
-                          const Spacer(),
-                          
-                          // Folder Title
-                          AppText(
-                            folderName,
-                            styleType: AppTextStyleType.bodyLarge,
-                            styleOverride: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          
-                          // Count badge
-                          AppText(
-                            '$noteCount Görsel Kart',
-                            styleType: AppTextStyleType.caption,
-                            color: AppColors.textSecondary,
-                          ),
-                        ],
-                      ),
+                          itemBuilder: (context, index) {
+                            final note = notes[index];
+                            final cardThemeColor = _parseColor(note.color);
+
+                            return FadeSlideEntrance(
+                              delay: Duration(milliseconds: 50 * index),
+                              child: BounceButton(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => PhotoNoteViewerScreen(noteId: note.id),
+                                    ),
+                                  );
+                                },
+                                child: Hero(
+                                  tag: 'photonote_img_${note.id}',
+                                  child: AppCard(
+                                    margin: EdgeInsets.zero,
+                                    padding: EdgeInsets.zero,
+                                    borderColor: cardThemeColor.withOpacity(0.3),
+                                    shadowColor: cardThemeColor,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(AppRadius.medium - 1),
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            cardThemeColor.withOpacity(0.95),
+                                            cardThemeColor.withOpacity(0.70),
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                      ),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          // Actions dropdown button on the top-right
+                                          Positioned(
+                                            top: 2,
+                                            right: 2,
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: IconButton(
+                                                icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                                                onPressed: () => _showOptionsDialog(note),
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.all(6),
+                                              ),
+                                            ),
+                                          ),
+
+                                          // Title centered in the card
+                                          Center(
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 24.0),
+                                              child: AppText(
+                                                note.title,
+                                                styleType: AppTextStyleType.bodyMedium,
+                                                styleOverride: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  height: 1.3,
+                                                ),
+                                                textAlign: TextAlign.center,
+                                                maxLines: 4,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
-                  ),
-                );
-              },
-            );
+                  );
           },
         ),
         floatingActionButton: FloatingActionButton(
           backgroundColor: AppColors.primary,
           foregroundColor: Colors.white,
-          onPressed: _showAddEditSheet,
+          onPressed: () => _showAddEditSheet(),
           child: const Icon(Icons.add_photo_alternate_rounded),
         ),
       ),
