@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hive/hive.dart';
 import '../../domain/models/note.dart';
@@ -7,6 +8,7 @@ import '../../data/services/notification_service.dart';
 import 'package:home_widget/home_widget.dart';
 
 class NoteProvider extends ChangeNotifier {
+  static const _launchChannel = MethodChannel('com.example.smart_notebook/launch');
   final NoteRepository _noteRepository = NoteRepository();
   final Uuid _uuid = const Uuid();
 
@@ -41,6 +43,9 @@ class NoteProvider extends ChangeNotifier {
         name: 'NoteWidgetProvider',
         iOSName: 'NoteWidgetProvider',
       );
+      
+      // Force instant update on Xiaomi/MIUI via foreground broadcast channel
+      await _launchChannel.invokeMethod('updateNoteWidget');
     } catch (e) {
       debugPrint('Widget update error: $e');
     }

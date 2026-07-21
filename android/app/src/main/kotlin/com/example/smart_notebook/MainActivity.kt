@@ -70,6 +70,30 @@ class MainActivity : FlutterActivity() {
                     sendBroadcast(intent)
                     result.success(null)
                 }
+                "updatePhotoWidget" -> {
+                    val intent = Intent(applicationContext, PhotoNoteWidgetProvider::class.java).apply {
+                        action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+                        val appWidgetManager = AppWidgetManager.getInstance(applicationContext)
+                        val thisWidget = android.content.ComponentName(applicationContext, PhotoNoteWidgetProvider::class.java)
+                        val ids = appWidgetManager.getAppWidgetIds(thisWidget)
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                        addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    }
+                    sendBroadcast(intent)
+                    result.success(null)
+                }
+                "updateNoteWidget" -> {
+                    val intent = Intent(applicationContext, NoteWidgetProvider::class.java).apply {
+                        action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
+                        val appWidgetManager = AppWidgetManager.getInstance(applicationContext)
+                        val thisWidget = android.content.ComponentName(applicationContext, NoteWidgetProvider::class.java)
+                        val ids = appWidgetManager.getAppWidgetIds(thisWidget)
+                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
+                        addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    }
+                    sendBroadcast(intent)
+                    result.success(null)
+                }
                 else -> {
                     result.notImplemented()
                 }

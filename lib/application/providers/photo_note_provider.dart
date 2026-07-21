@@ -4,10 +4,12 @@ import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:flutter/services.dart';
 import '../../domain/models/photo_note.dart';
 
 class PhotoNoteProvider extends ChangeNotifier {
   static const String _boxName = 'photo_notes';
+  static const _launchChannel = MethodChannel('com.example.smart_notebook/launch');
   final Uuid _uuid = const Uuid();
 
   List<PhotoNote> _photoNotes = [];
@@ -217,6 +219,9 @@ class PhotoNoteProvider extends ChangeNotifier {
         name: 'PhotoNoteWidgetProvider',
         iOSName: 'PhotoNoteWidgetProvider',
       );
+      
+      // Force instant update on Xiaomi/MIUI via foreground broadcast channel
+      await _launchChannel.invokeMethod('updatePhotoWidget');
     } catch (e) {
       debugPrint('Error updating photo note widget: $e');
     }
@@ -233,6 +238,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       final box = Hive.box(_boxName);
       await box.put('categories_list', _customCategories);
       notifyListeners();
+      await _updateWidget();
     }
   }
 
