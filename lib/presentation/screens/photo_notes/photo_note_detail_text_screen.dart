@@ -91,6 +91,75 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     _saveNoteImmediate();
   }
 
+  void _indentCurrentLine({bool reverse = false}) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    int cursorStart = selection.start;
+    int cursorEnd = selection.end;
+
+    if (cursorStart < 0) cursorStart = text.length;
+    if (cursorEnd < 0) cursorEnd = text.length;
+
+    final minPos = cursorStart < cursorEnd ? cursorStart : cursorEnd;
+    final maxPos = cursorStart > cursorEnd ? cursorStart : cursorEnd;
+
+    // Find start of the first line in selection
+    int firstLineStart = text.lastIndexOf('\n', minPos > 0 ? minPos - 1 : 0);
+    firstLineStart = firstLineStart == -1 ? 0 : firstLineStart + 1;
+
+    // Find end of the last line in selection
+    int lastLineEnd = text.indexOf('\n', maxPos);
+    if (lastLineEnd == -1) lastLineEnd = text.length;
+
+    // Process all lines in the selection range
+    final selectedChunk = text.substring(firstLineStart, lastLineEnd);
+    final lines = selectedChunk.split('\n');
+
+    int addedTotal = 0;
+    int firstLineAdded = 0;
+    List<String> modifiedLines = [];
+
+    for (int i = 0; i < lines.length; i++) {
+      String line = lines[i];
+      if (!reverse) {
+        // Indent: Add 4 spaces
+        modifiedLines.add('    $line');
+        addedTotal += 4;
+        if (i == 0) firstLineAdded = 4;
+      } else {
+        // Outdent: Remove up to 4 leading spaces
+        int spacesToRemove = 0;
+        while (spacesToRemove < 4 && spacesToRemove < line.length && line[spacesToRemove] == ' ') {
+          spacesToRemove++;
+        }
+        modifiedLines.add(line.substring(spacesToRemove));
+        addedTotal -= spacesToRemove;
+        if (i == 0) firstLineAdded = -spacesToRemove;
+      }
+    }
+
+    final newChunk = modifiedLines.join('\n');
+    final newText = text.replaceRange(firstLineStart, lastLineEnd, newChunk);
+
+    int newCursorStart = cursorStart + firstLineAdded;
+    int newCursorEnd = cursorEnd + addedTotal;
+
+    if (newCursorStart < 0) newCursorStart = 0;
+    if (newCursorEnd < 0) newCursorEnd = 0;
+    if (newCursorStart > newText.length) newCursorStart = newText.length;
+    if (newCursorEnd > newText.length) newCursorEnd = newText.length;
+
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection(
+        baseOffset: newCursorStart,
+        extentOffset: newCursorEnd,
+      ),
+    );
+
+    _saveNoteImmediate();
+  }
+
   Color _parseColor(String hex) {
     try {
       return Color(int.parse(hex.replaceFirst('#', '0xFF')));
@@ -270,7 +339,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                     ),
                     AppSpacing.gapHMd,
 
-                    // Quick Symbols / Arrows Toolbar
+                    // Quick Toolbar (Indent + Symbols)
                     Container(
                       height: 48,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -281,14 +350,24 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.code_rounded, size: 18, color: Color(0xFF14B8A6)),
-                          const SizedBox(width: 6),
-                          const AppText(
-                            'Simgeler:',
-                            styleType: AppTextStyleType.caption,
-                            styleOverride: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70),
+                          // Indent Increase Button (Girinti İçeri)
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            icon: const Icon(Icons.format_indent_increase_rounded, color: Color(0xFF14B8A6), size: 22),
+                            tooltip: 'Satırı İçeri Al (Girinti)',
+                            onPressed: () => _indentCurrentLine(reverse: false),
                           ),
-                          const SizedBox(width: 8),
+                          // Indent Decrease Button (Girinti Dışarı)
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            icon: const Icon(Icons.format_indent_decrease_rounded, color: Colors.white70, size: 22),
+                            tooltip: 'Satırı Dışarı Al (Girintiyi Kaldır)',
+                            onPressed: () => _indentCurrentLine(reverse: true),
+                          ),
+                          const VerticalDivider(color: Colors.white24, width: 12, indent: 6, endIndent: 6),
+                          const SizedBox(width: 4),
                           Expanded(
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
@@ -352,7 +431,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                           textAlignVertical: TextAlignVertical.top,
                           style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
                           decoration: InputDecoration(
-                            hintText: 'Örn:\n• Bu haritadaki Bafra Ovası ↑ Karadeniz bölgesindedir.\n• Çarşamba Ovası → Yeşilırmak deltasında yer alır.\n\nNot almak için ekrana dokunabilirsiniz.',
+                            hintText: 'Örn:\nDelta ovası oluşumunu kolaylaştırır:\n    az gelgit\n    çok alüvyon\n    enine kıyı\n\nNot almak için ekrana dokunabilirsiniz.',
                             hintStyle: TextStyle(color: AppColors.textMuted.withOpacity(0.6), fontSize: 14, height: 1.5),
                             border: InputBorder.none,
                             focusedBorder: InputBorder.none,
