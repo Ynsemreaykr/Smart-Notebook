@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../application/providers/photo_note_provider.dart';
 import '../../../core/theme/app_colors.dart';
@@ -29,6 +30,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
   @override
   void initState() {
     super.initState();
+    WakelockPlus.enable();
     final provider = context.read<PhotoNoteProvider>();
     final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
     final initialNote = noteIndex != -1 ? provider.photoNotes[noteIndex].note : '';
@@ -38,6 +40,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _debounceTimer?.cancel();
     _saveNoteImmediate();
     _textController.removeListener(_onTextChanged);

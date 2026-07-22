@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../application/providers/photo_note_provider.dart';
 import '../../../core/theme/app_colors.dart';
@@ -25,7 +26,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   TapDownDetails? _doubleTapDetails;
 
   @override
+  void initState() {
+    super.initState();
+    WakelockPlus.enable();
+  }
+
+  @override
   void dispose() {
+    WakelockPlus.disable();
     _transformationController.dispose();
     super.dispose();
   }
