@@ -14,6 +14,7 @@ import '../../widgets/bounce_button.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/empty_state_widget.dart';
 import 'photo_note_viewer_screen.dart';
+import 'photo_note_detail_text_screen.dart';
 
 class PhotoNotesCategoryScreen extends StatefulWidget {
   final String category;
@@ -352,8 +353,21 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6)),
+                title: const AppText('Ders Notu Yaz / Oku', styleType: AppTextStyleType.bodyMedium),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PhotoNoteDetailTextScreen(noteId: note.id),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.edit_rounded),
-                title: const AppText('Düzenle', styleType: AppTextStyleType.bodyMedium),
+                title: const AppText('Kart Bilgilerini Düzenle', styleType: AppTextStyleType.bodyMedium),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showAddEditSheet(note: note);

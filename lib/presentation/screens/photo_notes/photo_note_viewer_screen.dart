@@ -172,50 +172,53 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
-                top: _showUI ? 0 : -100,
+                top: _showUI ? 0 : -140,
                 left: 0,
                 right: 0,
-                child: Container(
-                  height: 100,
-                  padding: const EdgeInsets.only(top: 40, left: 8, right: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.black.withOpacity(0.85), Colors.transparent],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
+                child: SafeArea(
+                  top: true,
+                  bottom: false,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.black.withOpacity(0.85), Colors.transparent],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
                     ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
-                              color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                              size: 26,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
+                                color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                                size: 28,
+                              ),
+                              tooltip: 'Görsel Notları',
+                              onPressed: () => _openNoteTextScreen(context, note),
                             ),
-                            tooltip: 'Görsel Notları',
-                            onPressed: () => _openNoteTextScreen(context, note),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.share_rounded, color: Colors.white),
-                            tooltip: 'Paylaş',
-                            onPressed: () => _shareImage(note),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-                            tooltip: 'Sil',
-                            onPressed: () => _deleteNote(context, note),
-                          ),
-                        ],
-                      ),
-                    ],
+                            IconButton(
+                              icon: const Icon(Icons.share_rounded, color: Colors.white),
+                              tooltip: 'Paylaş',
+                              onPressed: () => _shareImage(note),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                              tooltip: 'Sil',
+                              onPressed: () => _deleteNote(context, note),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

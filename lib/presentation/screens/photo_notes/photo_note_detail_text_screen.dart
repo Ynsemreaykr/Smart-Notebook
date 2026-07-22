@@ -20,7 +20,15 @@ class PhotoNoteDetailTextScreen extends StatefulWidget {
 
 class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
   late TextEditingController _textController;
-  bool _isInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<PhotoNoteProvider>();
+    final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
+    final initialNote = noteIndex != -1 ? provider.photoNotes[noteIndex].note : '';
+    _textController = TextEditingController(text: initialNote);
+  }
 
   @override
   void dispose() {
@@ -75,11 +83,6 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
 
         final note = notes[noteIndex];
         final cardColor = _parseColor(note.color);
-
-        if (!_isInitialized) {
-          _textController = TextEditingController(text: note.note);
-          _isInitialized = true;
-        }
 
         return AppContainer(
           hasGradient: true,
