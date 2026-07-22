@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:flutter/services.dart';
 import '../../domain/models/photo_note.dart';
+import '../../domain/models/flashcard.dart';
 
 class PhotoNoteProvider extends ChangeNotifier {
   static const String _boxName = 'photo_notes';
@@ -13,11 +14,13 @@ class PhotoNoteProvider extends ChangeNotifier {
   final Uuid _uuid = const Uuid();
 
   List<PhotoNote> _photoNotes = [];
+  List<Flashcard> _flashcards = [];
   List<String> _customCategories = [];
   bool _isLoading = false;
   String _selectedCategory = 'Tümü';
 
   List<PhotoNote> get photoNotes => _photoNotes;
+  List<Flashcard> get flashcards => _flashcards;
   List<String> get customCategories => _customCategories;
   bool get isLoading => _isLoading;
   String get selectedCategory => _selectedCategory;
@@ -47,7 +50,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Load photo notes and categories from Hive
+  /// Load photo notes, flashcards, and categories from Hive
   Future<void> loadPhotoNotes() async {
     _isLoading = true;
     notifyListeners();
@@ -55,15 +58,23 @@ class PhotoNoteProvider extends ChangeNotifier {
     try {
       final box = Hive.box(_boxName);
       final Map<String, PhotoNote> loadedMap = {};
+      final List<Flashcard> loadedFlashcards = [];
 
       for (var key in box.keys) {
         if (key == 'categories_list' || key == 'notes_order') continue;
         final data = box.get(key);
         if (data is Map) {
-          final note = PhotoNote.fromMap(data);
-          loadedMap[note.id] = note;
+          if (data.containsKey('frontText')) {
+            loadedFlashcards.add(Flashcard.fromMap(data));
+          } else if (data.containsKey('imagePath')) {
+            final note = PhotoNote.fromMap(data);
+            loadedMap[note.id] = note;
+          }
         }
       }
+
+      _flashcards = loadedFlashcards
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       // Load custom categories
       final savedCats = box.get('categories_list');
@@ -516,7 +527,69 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     for (var key in keysToDelete) {
       await box.delete(key);
-    }    await loadPhotoNotes();
+    await loadPhotoNotes();
+  }
+
+  /// Get list of flashcards for a specific category path
+  List<Flashcard> getFlashcardsForCategory(String categoryPath) {
+    final trimmed = categoryPath.trim();
+    return _flashcards.where((f) => f.category.trim() == trimmed).toList();
+  }
+
+  /// Add a new Flashcard (Bilgi Kartı)
+  Future<Flashcard> addFlashcard({
+    required String frontText,
+    required String backText,
+    required String category,
+    String color = '#14B8A6',
+  }) async {
+    final id = 'flashcard_${_uuid.v4()}';
+    final now = DateTime.now();
+
+    final card = Flashcard(
+      id: id,
+      frontText: frontText.trim(),
+      backText: backText.trim(),
+      category: category.trim(),
+      color: color,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    final box = Hive.box(_boxName);
+    await box.put(id, card.toMap());
+    await loadPhotoNotes();
+    return card;
+  }
+
+  /// Update an existing Flashcard (Bilgi Kartı)
+  Future<void> updateFlashcard({
+    required String id,
+    String? frontText,
+    String? backText,
+    String? color,
+  }) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(id);
+    if (rawData == null || rawData is! Map) return;
+
+    final existing = Flashcard.fromMap(rawData);
+    final updated = existing.copyWith(
+      frontText: frontText?.trim(),
+      backText: backText?.trim(),
+      color: color,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(id, updated.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Delete a Flashcard (Bilgi Kartı)
+  Future<void> deleteFlashcard(String id) async {
+    final box = Hive.box(_boxName);
+    await box.delete(id);
+    await loadPhotoNotes();
   }
 
   /// Clear all photo notes and custom categories completely
