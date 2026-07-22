@@ -9,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_radius.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../widgets/common/app_text.dart';
+import 'photo_note_detail_text_screen.dart';
 
 class PhotoNoteViewerScreen extends StatefulWidget {
   final String noteId;
@@ -101,108 +102,12 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
-  void _showNoteSheet(BuildContext context, PhotoNote note) {
-    final noteController = TextEditingController(text: note.note);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
+  void _openNoteTextScreen(BuildContext context, PhotoNote note) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoNoteDetailTextScreen(noteId: note.id),
       ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            top: AppSpacing.lg,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 28),
-                        const SizedBox(width: 8),
-                        AppText(
-                          'Görsel Notları',
-                          styleType: AppTextStyleType.headingMedium,
-                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                AppText(
-                  '${note.title} için ek bilgileri ve ders notlarını buraya alabilirsiniz.',
-                  styleType: AppTextStyleType.caption,
-                  color: AppColors.textSecondary,
-                ),
-                AppSpacing.gapHMd,
-
-                TextField(
-                  controller: noteController,
-                  maxLines: 8,
-                  minLines: 4,
-                  autofocus: note.note.isEmpty,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'Örn: Bu haritadaki ovalar 3 bölgeye ayrılır. 1- Bafra Ovası (Samsun), 2- Çarşamba Ovası...',
-                    hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    filled: true,
-                    fillColor: AppColors.surfaceLighter,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.medium),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.all(16),
-                  ),
-                ),
-                AppSpacing.gapHLg,
-
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF14B8A6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                  ),
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await context.read<PhotoNoteProvider>().updatePhotoNoteText(note.id, noteController.text);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Not başarıyla kaydedildi.'),
-                          backgroundColor: Color(0xFF14B8A6),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.save_rounded),
-                  label: const AppText(
-                    'Notu Kaydet',
-                    styleType: AppTextStyleType.label,
-                    styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -296,7 +201,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               size: 26,
                             ),
                             tooltip: 'Görsel Notları',
-                            onPressed: () => _showNoteSheet(context, note),
+                            onPressed: () => _openNoteTextScreen(context, note),
                           ),
                           IconButton(
                             icon: const Icon(Icons.share_rounded, color: Colors.white),
@@ -371,7 +276,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       if (note.note.isNotEmpty) ...[
                         AppSpacing.gapHSm,
                         GestureDetector(
-                          onTap: () => _showNoteSheet(context, note),
+                          onTap: () => _openNoteTextScreen(context, note),
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
