@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../application/providers/photo_note_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_radius.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
 import 'photo_note_detail_text_screen.dart';
 
@@ -32,12 +32,12 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    WakelockPlus.enable();
+    WakelockHelper.enable();
   }
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    WakelockHelper.disable();
     _pageController.dispose();
     _transformationController.dispose();
     super.dispose();

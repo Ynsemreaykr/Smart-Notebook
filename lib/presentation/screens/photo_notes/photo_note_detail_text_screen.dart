@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../application/providers/photo_note_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_radius.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../../widgets/common/app_container.dart';
 import '../../../widgets/common/app_card.dart';
@@ -32,7 +32,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
   @override
   void initState() {
     super.initState();
-    WakelockPlus.enable();
+    WakelockHelper.enable();
     final provider = context.read<PhotoNoteProvider>();
     final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
     final initialNote = noteIndex != -1 ? provider.photoNotes[noteIndex].note : '';
@@ -42,7 +42,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
 
   @override
   void dispose() {
-    WakelockPlus.disable();
+    WakelockHelper.disable();
     _debounceTimer?.cancel();
     _longPressResetTimer?.cancel();
     _saveNoteImmediate();

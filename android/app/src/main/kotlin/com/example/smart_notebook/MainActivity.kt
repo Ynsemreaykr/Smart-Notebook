@@ -3,6 +3,7 @@ package com.example.smart_notebook
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -92,6 +93,15 @@ class MainActivity : FlutterActivity() {
                         addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                     }
                     sendBroadcast(intent)
+                    result.success(null)
+                }
+                "setKeepScreenOn" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    if (enabled) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    }
                     result.success(null)
                 }
                 else -> {
