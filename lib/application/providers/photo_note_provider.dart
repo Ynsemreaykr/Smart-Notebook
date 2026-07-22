@@ -385,36 +385,93 @@ class PhotoNoteProvider extends ChangeNotifier {
     }
   }
 
-  /// Rename an existing category/folder and update all containing notes
+  /// Get top-level categories (categories without ' / ' separator or base subjects)
+  List<String> get topLevelCategories {
+    final set = <String>{};
+    for (var cat in _customCategories) {
+      final parts = cat.split(' / ');
+      if (parts.first.trim().isNotEmpty) {
+        set.add(parts.first.trim());
+      }
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  /// Get direct sub-categories (units) of a parent category path
+  List<String> getSubCategories(String parentPath) {
+    final trimmedParent = parentPath.trim();
+    final prefix = '$trimmedParent / ';
+    final set = <String>{};
+    for (var cat in _customCategories) {
+      if (cat.startsWith(prefix)) {
+        final rest = cat.substring(prefix.length);
+        final subName = rest.split(' / ').first.trim();
+        if (subName.isNotEmpty) {
+          set.add(subName);
+        }
+      }
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  /// Add a sub-category / unit under a parent path
+  Future<void> addSubCategory(String parentPath, String subCategoryName) async {
+    final name = subCategoryName.trim();
+    if (name.isEmpty) return;
+    final fullPath = '$parentPath / $name';
+    await addCategory(fullPath);
+  }
+
+  /// Get count of notes under a category path
+  int getNoteCountForCategory(String categoryPath, {bool includeSubCategories = true}) {
+    final trimmed = categoryPath.trim();
+    if (includeSubCategories) {
+      final prefix = '$trimmed / ';
+      return _photoNotes.where((n) => n.category.trim() == trimmed || n.category.trim().startsWith(prefix)).length;
+    } else {
+      return _photoNotes.where((n) => n.category.trim() == trimmed).length;
+    }
+  }
+
+  /// Rename an existing category/folder (including all its sub-units and notes)
   Future<void> renameCategory(String oldName, String newName) async {
     final oldTrimmed = oldName.trim();
     final newTrimmed = newName.trim();
     if (oldTrimmed.isEmpty || newTrimmed.isEmpty || oldTrimmed == newTrimmed) return;
 
-    // Check if new name already exists in categories list (case-insensitive check)
-    final exists = _customCategories.any((cat) => cat.toLowerCase() == newTrimmed.toLowerCase() && cat != oldTrimmed);
-    if (exists) return;
+    final oldPrefix = '$oldTrimmed / ';
+    final List<String> updatedCatList = [];
 
-    // Rename in list
-    final index = _customCategories.indexOf(oldTrimmed);
-    if (index != -1) {
-      _customCategories[index] = newTrimmed;
-    } else {
-      _customCategories.remove(oldTrimmed);
-      _customCategories.add(newTrimmed);
+    for (var cat in _customCategories) {
+      if (cat == oldTrimmed) {
+        updatedCatList.add(newTrimmed);
+      } else if (cat.startsWith(oldPrefix)) {
+        final rest = cat.substring(oldPrefix.length);
+        updatedCatList.add('$newTrimmed / $rest');
+      } else {
+        updatedCatList.add(cat);
+      }
     }
 
+    _customCategories = updatedCatList;
     final box = Hive.box(_boxName);
     await box.put('categories_list', _customCategories);
 
-    // Update all notes with old category
+    // Update all notes with old category or sub-categories
     for (var key in box.keys) {
-      if (key == 'categories_list') continue;
+      if (key == 'categories_list' || key == 'notes_order') continue;
       final data = box.get(key);
       if (data is Map) {
         final note = PhotoNote.fromMap(data);
-        if (note.category.trim() == oldTrimmed) {
+        final cat = note.category.trim();
+        if (cat == oldTrimmed) {
           final updatedNote = note.copyWith(category: newTrimmed);
+          await box.put(key, updatedNote.toMap());
+        } else if (cat.startsWith(oldPrefix)) {
+          final rest = cat.substring(oldPrefix.length);
+          final updatedNote = note.copyWith(category: '$newTrimmed / $rest');
           await box.put(key, updatedNote.toMap());
         }
       }
@@ -423,42 +480,43 @@ class PhotoNoteProvider extends ChangeNotifier {
     await loadPhotoNotes();
   }
 
-  /// Delete a category / folder and all notes inside it
+  /// Delete a category / folder and all sub-units and notes inside it
   Future<void> deleteCategory(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
 
-    _customCategories.remove(trimmed);
+    final prefix = '$trimmed / ';
+    _customCategories.removeWhere((cat) => cat == trimmed || cat.startsWith(prefix));
+
     final box = Hive.box(_boxName);
     await box.put('categories_list', _customCategories);
 
-    // Delete all notes belonging to this category
+    // Delete all notes belonging to this category or its sub-categories
     final keysToDelete = [];
     for (var key in box.keys) {
-      if (key == 'categories_list') continue;
+      if (key == 'categories_list' || key == 'notes_order') continue;
       final data = box.get(key);
       if (data is Map) {
         final note = PhotoNote.fromMap(data);
-        if (note.category.trim() == trimmed) {
-          keysToDelete.add(key);
-          // Delete image file if it exists
+        final cat = note.category.trim();
+        if (cat == trimmed || cat.startsWith(prefix)) {
+          // Delete file
           try {
             final file = File(note.imagePath);
             if (await file.exists()) {
               await file.delete();
             }
           } catch (e) {
-            debugPrint('Error deleting note image: $e');
+            debugPrint('Error deleting note file: $e');
           }
+          keysToDelete.add(key);
         }
       }
     }
 
     for (var key in keysToDelete) {
       await box.delete(key);
-    }
-
-    await loadPhotoNotes();
+    }    await loadPhotoNotes();
   }
 
   /// Clear all photo notes and custom categories completely

@@ -639,7 +639,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
             }
 
             final allNotes = provider.photoNotes;
-            final folders = provider.allCategories;
+            final folders = provider.topLevelCategories;
 
             if (folders.isEmpty) {
               return const EmptyStateWidget(
@@ -647,13 +647,6 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                 title: 'Bölüm Bulunmamaktadır',
                 subtitle: 'Görsel ders notlarınızı sınıflandırmak için lütfen üst bardaki klasör ekleme butonunu kullanarak ilk bölüm klasörünüzü oluşturun.',
               );
-            }
-
-            // Group notes by category
-            final Map<String, List<PhotoNote>> categoriesMap = {};
-            for (var note in allNotes) {
-              final cat = note.category.trim().isEmpty ? 'Genel' : note.category.trim();
-              categoriesMap.putIfAbsent(cat, () => []).add(note);
             }
 
             return GridView.builder(
@@ -669,8 +662,11 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
               itemBuilder: (context, index) {
                 final folderName = folders[index];
                 
-                // Determine number of notes in this folder
-                final noteCount = categoriesMap[folderName]?.length ?? 0;
+                final subUnitCount = provider.getSubCategories(folderName).length;
+                final noteCount = provider.getNoteCountForCategory(folderName, includeSubCategories: true);
+                final subtitleText = subUnitCount > 0
+                    ? '$subUnitCount Ünite • $noteCount Not'
+                    : '$noteCount Görsel Kart';
 
                 final folderColor = _getCategoryColor(folderName);
                 final folderIcon = _getCategoryIcon(folderName);
@@ -727,7 +723,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                               
                               // Count badge
                               AppText(
-                                '$noteCount Görsel Kart',
+                                subtitleText,
                                 styleType: AppTextStyleType.caption,
                                 color: AppColors.textSecondary,
                               ),
