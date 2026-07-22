@@ -527,6 +527,8 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     for (var key in keysToDelete) {
       await box.delete(key);
+    }
+
     await loadPhotoNotes();
   }
 
