@@ -96,6 +96,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
 
   void _showAddEditSheet() {
     final titleController = TextEditingController();
+    final noteTextController = TextEditingController();
     final categories = context.read<PhotoNoteProvider>().customCategories;
     String selectedCategory = categories.isNotEmpty ? categories.first : '';
     String selectedColor = _presetColors.first;
@@ -310,6 +311,19 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     ],
                     AppSpacing.gapHMd,
 
+                    // Written Note (Optional)
+                    TextField(
+                      controller: noteTextController,
+                      maxLines: 3,
+                      minLines: 1,
+                      decoration: InputDecoration(
+                        labelText: 'Ders Notu / Açıklama (İsteğe bağlı)',
+                        prefixIcon: const Icon(Icons.notes_rounded),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+
                     // Color Picker
                     const AppText(
                       'Kart Rengi',
@@ -391,6 +405,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                           imageFile: selectedImage!,
                           category: selectedCategory,
                           color: selectedColor,
+                          note: noteTextController.text,
                         );
                       },
                       child: const AppText(

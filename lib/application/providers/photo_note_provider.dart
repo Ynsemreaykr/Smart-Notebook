@@ -90,6 +90,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     required File imageFile,
     required String category,
     required String color,
+    String note = '',
   }) async {
     final id = _uuid.v4();
     final now = DateTime.now();
@@ -107,6 +108,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       imagePath: savedFile.path,
       category: category.trim(),
       color: color,
+      note: note.trim(),
       createdAt: now,
       updatedAt: now,
     );
@@ -127,6 +129,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     File? newImageFile,
     String? category,
     String? color,
+    String? note,
   }) async {
     final box = Hive.box(_boxName);
     final rawData = box.get(id);
@@ -161,6 +164,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       imagePath: imagePath,
       category: category?.trim(),
       color: color,
+      note: note?.trim(),
       updatedAt: DateTime.now(),
     );
 
@@ -168,6 +172,22 @@ class PhotoNoteProvider extends ChangeNotifier {
     await box.put(id, updatedNote.toMap());
 
     // 4. Reload notes
+    await loadPhotoNotes();
+  }
+
+  /// Quick update for written note text of a photo note
+  Future<void> updatePhotoNoteText(String id, String textNote) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(id);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final updatedNote = existingNote.copyWith(
+      note: textNote.trim(),
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(id, updatedNote.toMap());
     await loadPhotoNotes();
   }
 

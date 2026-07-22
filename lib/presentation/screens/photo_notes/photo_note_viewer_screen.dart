@@ -101,6 +101,111 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  void _showNoteSheet(BuildContext context, PhotoNote note) {
+    final noteController = TextEditingController(text: note.note);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 28),
+                        const SizedBox(width: 8),
+                        AppText(
+                          'Görsel Notları',
+                          styleType: AppTextStyleType.headingMedium,
+                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                AppText(
+                  '${note.title} için ek bilgileri ve ders notlarını buraya alabilirsiniz.',
+                  styleType: AppTextStyleType.caption,
+                  color: AppColors.textSecondary,
+                ),
+                AppSpacing.gapHMd,
+
+                TextField(
+                  controller: noteController,
+                  maxLines: 8,
+                  minLines: 4,
+                  autofocus: note.note.isEmpty,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Örn: Bu haritadaki ovalar 3 bölgeye ayrılır. 1- Bafra Ovası (Samsun), 2- Çarşamba Ovası...',
+                    hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    filled: true,
+                    fillColor: AppColors.surfaceLighter,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.medium),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.all(16),
+                  ),
+                ),
+                AppSpacing.gapHLg,
+
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14B8A6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await context.read<PhotoNoteProvider>().updatePhotoNoteText(note.id, noteController.text);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Not başarıyla kaydedildi.'),
+                          backgroundColor: Color(0xFF14B8A6),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.save_rounded),
+                  label: const AppText(
+                    'Notu Kaydet',
+                    styleType: AppTextStyleType.label,
+                    styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PhotoNoteProvider>(
@@ -185,6 +290,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       Row(
                         children: [
                           IconButton(
+                            icon: Icon(
+                              note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
+                              color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                              size: 26,
+                            ),
+                            tooltip: 'Görsel Notları',
+                            onPressed: () => _showNoteSheet(context, note),
+                          ),
+                          IconButton(
                             icon: const Icon(Icons.share_rounded, color: Colors.white),
                             tooltip: 'Paylaş',
                             onPressed: () => _shareImage(note),
@@ -205,14 +319,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
               AnimatedPositioned(
                 duration: const Duration(milliseconds: 250),
                 curve: Curves.easeInOut,
-                bottom: _showUI ? 0 : -150,
+                bottom: _showUI ? 0 : -220,
                 left: 0,
                 right: 0,
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 36),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.9)],
+                      colors: [Colors.transparent, Colors.black.withOpacity(0.95)],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                     ),
@@ -254,6 +368,38 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         styleType: AppTextStyleType.bodySmall,
                         color: Colors.white70,
                       ),
+                      if (note.note.isNotEmpty) ...[
+                        AppSpacing.gapHSm,
+                        GestureDetector(
+                          onTap: () => _showNoteSheet(context, note),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14B8A6).withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                              border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.4), width: 1),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.sticky_note_2_rounded, color: Color(0xFF14B8A6), size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: AppText(
+                                    note.note,
+                                    styleType: AppTextStyleType.bodySmall,
+                                    color: Colors.white,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 20),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

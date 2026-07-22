@@ -4,6 +4,7 @@ class PhotoNote {
   final String imagePath;
   final String category;
   final String color;
+  final String note;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -13,6 +14,7 @@ class PhotoNote {
     required this.imagePath,
     this.category = '',
     this.color = '#1E3A8A',
+    this.note = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -22,6 +24,7 @@ class PhotoNote {
     String? imagePath,
     String? category,
     String? color,
+    String? note,
     DateTime? updatedAt,
   }) {
     return PhotoNote(
@@ -30,6 +33,7 @@ class PhotoNote {
       imagePath: imagePath ?? this.imagePath,
       category: category ?? this.category,
       color: color ?? this.color,
+      note: note ?? this.note,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -42,6 +46,7 @@ class PhotoNote {
       'imagePath': imagePath,
       'category': category,
       'color': color,
+      'note': note,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -54,6 +59,7 @@ class PhotoNote {
       imagePath: map['imagePath'] as String,
       category: map['category'] as String? ?? '',
       color: map['color'] as String? ?? '#1E3A8A',
+      note: map['note'] as String? ?? '',
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );

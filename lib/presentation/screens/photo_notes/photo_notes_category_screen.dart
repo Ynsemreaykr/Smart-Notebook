@@ -47,8 +47,8 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
   void _showAddEditSheet({PhotoNote? note}) {
     final titleController = TextEditingController(text: note?.title ?? '');
-    // Pre-fill with active category
     final categoryController = TextEditingController(text: note?.category ?? widget.category);
+    final noteTextController = TextEditingController(text: note?.note ?? '');
     String selectedColor = note?.color ?? _presetColors.first;
     File? selectedImage = note != null ? File(note.imagePath) : null;
     bool isEdit = note != null;
@@ -224,6 +224,19 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                     AppSpacing.gapHMd,
 
+                    // Written Note (Optional)
+                    TextField(
+                      controller: noteTextController,
+                      maxLines: 3,
+                      minLines: 1,
+                      decoration: InputDecoration(
+                        labelText: 'Ders Notu / Açıklama (İsteğe bağlı)',
+                        prefixIcon: const Icon(Icons.notes_rounded),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+
                     // Color Picker
                     const AppText(
                       'Kart Rengi',
@@ -296,6 +309,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             title: titleController.text,
                             category: categoryController.text,
                             color: selectedColor,
+                            note: noteTextController.text,
                             newImageFile: selectedImage!.path == note.imagePath ? null : selectedImage,
                           );
                         } else {
@@ -304,6 +318,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             imageFile: selectedImage!,
                             category: categoryController.text,
                             color: selectedColor,
+                            note: noteTextController.text,
                           );
                         }
                       },
