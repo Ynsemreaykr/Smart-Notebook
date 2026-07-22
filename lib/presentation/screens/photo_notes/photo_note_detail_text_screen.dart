@@ -174,7 +174,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
-                              const AppText(
+                              AppText(
                                 'Bu görsel için ek ders notları ve açıklamalar',
                                 styleType: AppTextStyleType.caption,
                                 color: AppColors.textSecondary,
