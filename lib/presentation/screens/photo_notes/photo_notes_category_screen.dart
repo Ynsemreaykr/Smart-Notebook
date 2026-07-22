@@ -616,6 +616,28 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                   ),
                 ),
+
+                // Multi-Image Dot Indicator Badge at the bottom of the card
+                if (note.imagePaths.length > 1)
+                  Positioned(
+                    bottom: 8,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(note.imagePaths.length.clamp(1, 6), (i) {
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.9),
+                            shape: BoxShape.circle,
+                          ),
+                        );
+                      }),
+                    ),
+                  ),
               ],
             ),
           ),

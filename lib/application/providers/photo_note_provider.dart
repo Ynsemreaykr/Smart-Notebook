@@ -137,6 +137,7 @@ class PhotoNoteProvider extends ChangeNotifier {
   Future<PhotoNote> addPhotoNote({
     required String title,
     required File imageFile,
+    List<File>? extraImageFiles,
     required String category,
     required String color,
     String note = '',
@@ -144,17 +145,27 @@ class PhotoNoteProvider extends ChangeNotifier {
     final id = _uuid.v4();
     final now = DateTime.now();
 
-    // 1. Copy image file to app's local documents directory to keep it permanently
     final directory = await getApplicationDocumentsDirectory();
     final extension = imageFile.path.split('.').last;
     final targetPath = '${directory.path}/photonote_$id.$extension';
     final savedFile = await imageFile.copy(targetPath);
 
-    // 2. Create the photo note object
+    final List<String> allPaths = [savedFile.path];
+    if (extraImageFiles != null) {
+      for (int i = 0; i < extraImageFiles.length; i++) {
+        final file = extraImageFiles[i];
+        final ext = file.path.split('.').last;
+        final extraPath = '${directory.path}/photonote_${id}_extra_$i.$ext';
+        final savedExtra = await file.copy(extraPath);
+        allPaths.add(savedExtra.path);
+      }
+    }
+
     final newNote = PhotoNote(
       id: id,
       title: title.isEmpty ? 'Yeni Görsel Not' : title,
       imagePath: savedFile.path,
+      imagePaths: allPaths,
       category: category.trim(),
       color: color,
       note: note.trim(),
@@ -162,13 +173,76 @@ class PhotoNoteProvider extends ChangeNotifier {
       updatedAt: now,
     );
 
-    // 3. Save to Hive
     final box = Hive.box(_boxName);
     await box.put(id, newNote.toMap());
-
-    // 4. Reload notes
     await loadPhotoNotes();
     return newNote;
+  }
+
+  /// Add extra images to an existing photo note
+  Future<void> addExtraImagesToNote(String noteId, List<File> imageFiles) async {
+    if (imageFiles.isEmpty) return;
+
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final directory = await getApplicationDocumentsDirectory();
+    final List<String> newPaths = List<String>.from(existingNote.imagePaths);
+
+    for (var i = 0; i < imageFiles.length; i++) {
+      final file = imageFiles[i];
+      final ext = file.path.split('.').last;
+      final timeStamp = DateTime.now().millisecondsSinceEpoch;
+      final targetPath = '${directory.path}/photonote_${noteId}_${timeStamp}_$i.$ext';
+      final saved = await file.copy(targetPath);
+      newPaths.add(saved.path);
+    }
+
+    final updatedNote = existingNote.copyWith(
+      imagePaths: newPaths,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Remove a specific image at imageIndex from a photo note
+  Future<void> removeImageFromNote(String noteId, int imageIndex) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final paths = List<String>.from(existingNote.imagePaths);
+
+    if (imageIndex < 0 || imageIndex >= paths.length) return;
+
+    final removedPath = paths.removeAt(imageIndex);
+    try {
+      final file = File(removedPath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Error deleting sub-image: $e');
+    }
+
+    if (paths.isEmpty) {
+      await deletePhotoNote(noteId);
+      return;
+    }
+
+    final updatedNote = existingNote.copyWith(
+      imagePath: paths.first,
+      imagePaths: paths,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
   }
 
   /// Update an existing photo note
