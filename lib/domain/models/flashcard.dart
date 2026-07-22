@@ -4,6 +4,7 @@ class Flashcard {
   final String backText;
   final String category;
   final String? noteId;
+  final String groupTitle;
   final String color;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -14,6 +15,7 @@ class Flashcard {
     required this.backText,
     required this.category,
     this.noteId,
+    this.groupTitle = 'Genel Bilgiler',
     this.color = '#14B8A6',
     required this.createdAt,
     required this.updatedAt,
@@ -24,6 +26,7 @@ class Flashcard {
     String? backText,
     String? category,
     String? noteId,
+    String? groupTitle,
     String? color,
     DateTime? updatedAt,
   }) {
@@ -33,6 +36,7 @@ class Flashcard {
       backText: backText ?? this.backText,
       category: category ?? this.category,
       noteId: noteId ?? this.noteId,
+      groupTitle: groupTitle ?? this.groupTitle,
       color: color ?? this.color,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -46,6 +50,7 @@ class Flashcard {
       'backText': backText,
       'category': category,
       'noteId': noteId,
+      'groupTitle': groupTitle,
       'color': color,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -59,6 +64,7 @@ class Flashcard {
       backText: map['backText'] as String,
       category: map['category'] as String? ?? '',
       noteId: map['noteId'] as String?,
+      groupTitle: map['groupTitle'] as String? ?? 'Genel Bilgiler',
       color: map['color'] as String? ?? '#14B8A6',
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),

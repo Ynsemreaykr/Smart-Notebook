@@ -347,9 +347,10 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
     );
   }
 
-  void _showAddEditFlashcardSheet({Flashcard? card}) {
+  void _showAddEditFlashcardSheet({Flashcard? card, String? defaultGroup}) {
     final frontController = TextEditingController(text: card?.frontText ?? '');
     final backController = TextEditingController(text: card?.backText ?? '');
+    final groupController = TextEditingController(text: card?.groupTitle ?? defaultGroup ?? 'Genel Bilgiler');
     String selectedColor = card?.color ?? _presetColors.first;
     bool isEdit = card != null;
 
@@ -393,6 +394,18 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                     AppSpacing.gapHMd,
 
+                    // Heading Group Input
+                    TextField(
+                      controller: groupController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Kart Başlığı / Konu Grubu (Örn: Askeri Teşkilat)',
+                        prefixIcon: const Icon(Icons.topic_rounded, color: Color(0xFF14B8A6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+
                     // Front Text Input
                     TextField(
                       controller: frontController,
@@ -412,7 +425,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: 3,
                       decoration: InputDecoration(
-                        labelText: 'Arka Yüz (Açıklama / Anlamı - Örn: Zırh ve silah teminini sağlar)',
+                        labelText: 'Arka Yüz (Açıklama / Anlamı - Örn: Zırh ve silah temin eder)',
                         prefixIcon: const Icon(Icons.info_outline_rounded, color: Color(0xFF14B8A6)),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
                       ),
@@ -470,11 +483,14 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
                         Navigator.pop(ctx);
 
+                        final grp = groupController.text.trim().isEmpty ? 'Genel Bilgiler' : groupController.text.trim();
+
                         if (isEdit) {
                           await activeProvider.updateFlashcard(
                             id: card!.id,
                             frontText: frontController.text,
                             backText: backController.text,
+                            groupTitle: grp,
                             color: selectedColor,
                           );
                         } else {
@@ -482,6 +498,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             frontText: frontController.text,
                             backText: backController.text,
                             category: widget.category,
+                            groupTitle: grp,
                             color: selectedColor,
                           );
                         }
@@ -500,6 +517,90 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
           },
         );
       },
+    );
+  }
+
+  void _showAddNewHeadingDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Yeni Kart Başlığı / Konu Grubu Ekle',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Başlık Adı (Örn: Askeri Teşkilat)',
+            prefixIcon: Icon(Icons.topic_rounded, color: Color(0xFF14B8A6)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              final title = controller.text.trim();
+              Navigator.pop(ctx);
+              if (title.isNotEmpty) {
+                _showAddEditFlashcardSheet(defaultGroup: title);
+              }
+            },
+            child: AppText('Oluştur ve Kart Ekle', styleType: AppTextStyleType.label, color: const Color(0xFF14B8A6)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameHeadingDialog(String oldTitle) {
+    final controller = TextEditingController(text: oldTitle);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Başlığı Yeniden Adlandır',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Yeni Başlık Adı',
+            prefixIcon: Icon(Icons.edit_rounded, color: Color(0xFF14B8A6)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              final newTitle = controller.text.trim();
+              Navigator.pop(ctx);
+              if (newTitle.isNotEmpty && newTitle != oldTitle) {
+                context.read<PhotoNoteProvider>().renameFlashcardGroup(
+                  oldGroupTitle: oldTitle,
+                  newGroupTitle: newTitle,
+                  category: widget.category,
+                );
+              }
+            },
+            child: AppText('Kaydet', styleType: AppTextStyleType.label, color: const Color(0xFF14B8A6)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -822,6 +923,14 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.playlist_add_rounded, color: Color(0xFF14B8A6)),
+              title: const AppText('Yeni Kart Başlığı / Konu Grubu Ekle', styleType: AppTextStyleType.bodyMedium),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showAddNewHeadingDialog();
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.create_new_folder_rounded, color: Color(0xFF14B8A6)),
               title: const AppText('Yeni Ünite / Alt Klasör Ekle', styleType: AppTextStyleType.bodyMedium),
               onTap: () {
@@ -877,9 +986,10 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
               return note.category.trim() == widget.category.trim();
             }).toList();
 
-            final flashcards = provider.getFlashcardsForCategory(widget.category);
+            final groupedFlashcards = provider.getGroupedFlashcardsForCategory(widget.category);
+            final totalFlashcards = provider.getFlashcardsForCategory(widget.category).length;
 
-            if (subCategories.isEmpty && notes.isEmpty && flashcards.isEmpty) {
+            if (subCategories.isEmpty && notes.isEmpty && totalFlashcards == 0) {
               return EmptyStateWidget(
                 icon: Icons.folder_open_rounded,
                 title: 'Henüz İçerik Bulunmuyor',
@@ -1100,19 +1210,19 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                   ),
 
-                // 3. Section Header for Flashcards (Bilgi Kartları)
+                // 3. Grouped Flashcards Section (Bilgi Kartları Grupları)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
+                            const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 24),
                             const SizedBox(width: 8),
                             AppText(
-                              'Bilgi Kartları (Flaş Kartlar) (${flashcards.length})',
+                              'Bilgi Kartları ($totalFlashcards)',
                               styleType: AppTextStyleType.headingSmall,
                               styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
                             ),
@@ -1128,8 +1238,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                   ),
                 ),
 
-                // Grid of Flashcards (Bilgi Kartları)
-                if (flashcards.isEmpty)
+                if (groupedFlashcards.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -1151,7 +1260,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             ),
                             const SizedBox(height: 4),
                             AppText(
-                              'Örnek: Ön yüzde "Cebeci", arka yüzde "Zırh ve silah temin eder" şeklinde kavram-açıklama kartları oluşturup üzerlerine dokunarak çevirebilirsiniz.',
+                              'Örnek: Ön yüzde "Cebeci", arka yüzde "Zırh ve silah temin eder" şeklinde kartlar oluşturup "Askeri Teşkilat" gibi başlıklar altında gruplayabilirsiniz.',
                               styleType: AppTextStyleType.caption,
                               color: AppColors.textSecondary,
                               textAlign: TextAlign.center,
@@ -1162,30 +1271,130 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                   )
                 else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 12.0,
-                        mainAxisSpacing: 12.0,
-                        childAspectRatio: 1.1,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final card = flashcards[index];
-                          return FadeSlideEntrance(
-                            delay: Duration(milliseconds: 40 * index),
-                            child: FlipCardWidget(
-                              flashcard: card,
-                              onOptionsTap: () => _showFlashcardOptions(card),
+                  ...groupedFlashcards.entries.expand((entry) {
+                    final groupTitle = entry.key;
+                    final cards = entry.value;
+
+                    return [
+                      // Heading Banner Header
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14B8A6).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                              border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.35), width: 1),
                             ),
-                          );
-                        },
-                        childCount: flashcards.length,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.topic_rounded, color: Color(0xFF14B8A6), size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: AppText(
+                                          groupTitle,
+                                          styleType: AppTextStyleType.bodyLarge,
+                                          styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF14B8A6).withOpacity(0.3),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: AppText(
+                                          '${cards.length} Kart',
+                                          styleType: AppTextStyleType.caption,
+                                          styleOverride: const TextStyle(color: Colors.white, fontSize: 11),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
+                                      constraints: const BoxConstraints(),
+                                      padding: const EdgeInsets.all(4),
+                                      tooltip: 'Başlığı Düzenle',
+                                      onPressed: () => _showRenameHeadingDialog(groupTitle),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
+                                      constraints: const BoxConstraints(),
+                                      padding: const EdgeInsets.all(4),
+                                      tooltip: 'Bu Başlığa Kart Ekle',
+                                      onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
+
+                      // Grid of cards under this group
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12.0,
+                            mainAxisSpacing: 12.0,
+                            childAspectRatio: 1.1,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final card = cards[index];
+                              return FadeSlideEntrance(
+                                delay: Duration(milliseconds: 40 * index),
+                                child: FlipCardWidget(
+                                  flashcard: card,
+                                  onOptionsTap: () => _showFlashcardOptions(card),
+                                ),
+                              );
+                            },
+                            childCount: cards.length,
+                          ),
+                        ),
+                      ),
+                    ];
+                  }).toList(),
+
+                // Bottom Add New Heading / Topic Group Button (Sayfanın en altında)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF14B8A6),
+                        side: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                      icon: const Icon(Icons.playlist_add_rounded, size: 22),
+                      label: const AppText(
+                        'Yeni Kart Başlığı / Konu Grubu Ekle',
+                        styleType: AppTextStyleType.label,
+                        styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF14B8A6)),
+                      ),
+                      onPressed: () => _showAddNewHeadingDialog(),
                     ),
                   ),
+                ),
 
                 const SliverToBoxAdapter(child: SizedBox(height: 80)),
               ],

@@ -543,12 +543,35 @@ class PhotoNoteProvider extends ChangeNotifier {
     return _flashcards.where((f) => f.noteId == noteId).toList();
   }
 
+  /// Get flashcards grouped by heading/groupTitle for a category
+  Map<String, List<Flashcard>> getGroupedFlashcardsForCategory(String categoryPath) {
+    final cards = getFlashcardsForCategory(categoryPath);
+    final Map<String, List<Flashcard>> map = {};
+    for (var card in cards) {
+      final group = card.groupTitle.trim().isEmpty ? 'Genel Bilgiler' : card.groupTitle.trim();
+      map.putIfAbsent(group, () => []).add(card);
+    }
+    return map;
+  }
+
+  /// Get flashcards grouped by heading/groupTitle for a specific PhotoNote
+  Map<String, List<Flashcard>> getGroupedFlashcardsForNote(String noteId) {
+    final cards = getFlashcardsForNote(noteId);
+    final Map<String, List<Flashcard>> map = {};
+    for (var card in cards) {
+      final group = card.groupTitle.trim().isEmpty ? 'Genel Bilgiler' : card.groupTitle.trim();
+      map.putIfAbsent(group, () => []).add(card);
+    }
+    return map;
+  }
+
   /// Add a new Flashcard (Bilgi Kartı)
   Future<Flashcard> addFlashcard({
     required String frontText,
     required String backText,
     required String category,
     String? noteId,
+    String groupTitle = 'Genel Bilgiler',
     String color = '#14B8A6',
   }) async {
     final id = 'flashcard_${_uuid.v4()}';
@@ -560,6 +583,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       backText: backText.trim(),
       category: category.trim(),
       noteId: noteId,
+      groupTitle: groupTitle.trim().isEmpty ? 'Genel Bilgiler' : groupTitle.trim(),
       color: color,
       createdAt: now,
       updatedAt: now,
@@ -576,6 +600,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     required String id,
     String? frontText,
     String? backText,
+    String? groupTitle,
     String? color,
   }) async {
     final box = Hive.box(_boxName);
@@ -586,11 +611,37 @@ class PhotoNoteProvider extends ChangeNotifier {
     final updated = existing.copyWith(
       frontText: frontText?.trim(),
       backText: backText?.trim(),
+      groupTitle: groupTitle?.trim(),
       color: color,
       updatedAt: DateTime.now(),
     );
 
     await box.put(id, updated.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Rename a group heading for flashcards in a category/note
+  Future<void> renameFlashcardGroup({
+    required String oldGroupTitle,
+    required String newGroupTitle,
+    required String category,
+    String? noteId,
+  }) async {
+    final box = Hive.box(_boxName);
+    final targetCards = _flashcards.where((f) {
+      final matchCat = f.category.trim() == category.trim();
+      final matchNote = noteId == null || f.noteId == noteId;
+      final matchGroup = f.groupTitle.trim() == oldGroupTitle.trim();
+      return matchCat && matchNote && matchGroup;
+    }).toList();
+
+    for (var card in targetCards) {
+      final updated = card.copyWith(
+        groupTitle: newGroupTitle.trim().isEmpty ? 'Genel Bilgiler' : newGroupTitle.trim(),
+        updatedAt: DateTime.now(),
+      );
+      await box.put(card.id, updated.toMap());
+    }
     await loadPhotoNotes();
   }
 
