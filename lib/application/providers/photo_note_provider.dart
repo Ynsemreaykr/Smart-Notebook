@@ -54,13 +54,14 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     try {
       final box = Hive.box(_boxName);
-      final List<PhotoNote> loaded = [];
+      final Map<String, PhotoNote> loadedMap = {};
 
       for (var key in box.keys) {
-        if (key == 'categories_list') continue;
+        if (key == 'categories_list' || key == 'notes_order') continue;
         final data = box.get(key);
         if (data is Map) {
-          loaded.add(PhotoNote.fromMap(data));
+          final note = PhotoNote.fromMap(data);
+          loadedMap[note.id] = note;
         }
       }
 
@@ -72,9 +73,24 @@ class PhotoNoteProvider extends ChangeNotifier {
         _customCategories = [];
       }
 
-      // Sort by updatedAt (newest first)
-      loaded.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      _photoNotes = loaded;
+      // Load saved order if available
+      final savedOrder = box.get('notes_order');
+      final List<PhotoNote> sortedNotes = [];
+
+      if (savedOrder is List) {
+        for (var id in savedOrder) {
+          if (loadedMap.containsKey(id)) {
+            sortedNotes.add(loadedMap.remove(id)!);
+          }
+        }
+      }
+
+      // Add any remaining notes sorted by updatedAt (newest first)
+      final remaining = loadedMap.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      sortedNotes.addAll(remaining);
+
+      _photoNotes = sortedNotes;
       _updateWidget();
     } catch (e) {
       debugPrint('Error loading photo notes: $e');
@@ -82,6 +98,39 @@ class PhotoNoteProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Reorder filtered notes within a specific category
+  Future<void> reorderCategoryNotes(List<PhotoNote> categoryNotes, int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= categoryNotes.length) return;
+    if (newIndex < 0 || newIndex >= categoryNotes.length) return;
+    if (oldIndex == newIndex) return;
+
+    final item = categoryNotes.removeAt(oldIndex);
+    categoryNotes.insert(newIndex, item);
+
+    // Rebuild main _photoNotes list maintaining category order
+    final updatedList = <PhotoNote>[];
+    int catIdx = 0;
+    for (var note in _photoNotes) {
+      if (categoryNotes.any((n) => n.id == note.id)) {
+        if (catIdx < categoryNotes.length) {
+          updatedList.add(categoryNotes[catIdx++]);
+        }
+      } else {
+        updatedList.add(note);
+      }
+    }
+
+    _photoNotes = updatedList;
+
+    // Save order list in Hive
+    final box = Hive.box(_boxName);
+    final orderList = _photoNotes.map((n) => n.id).toList();
+    await box.put('notes_order', orderList);
+
+    _updateWidget();
+    notifyListeners();
   }
 
   /// Add a new photo note

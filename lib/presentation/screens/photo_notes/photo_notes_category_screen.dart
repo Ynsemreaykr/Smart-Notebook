@@ -489,76 +489,48 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
                             return FadeSlideEntrance(
                               delay: Duration(milliseconds: 50 * index),
-                              child: BounceButton(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => PhotoNoteViewerScreen(noteId: note.id),
+                              child: DragTarget<int>(
+                                onWillAcceptWithDetails: (details) => details.data != index,
+                                onAcceptWithDetails: (details) {
+                                  final oldIndex = details.data;
+                                  final newIndex = index;
+                                  provider.reorderCategoryNotes(notes, oldIndex, newIndex);
+                                },
+                                builder: (context, candidateData, rejectedData) {
+                                  final isHovered = candidateData.isNotEmpty;
+                                  return LongPressDraggable<int>(
+                                    data: index,
+                                    feedback: Material(
+                                      color: Colors.transparent,
+                                      elevation: 8.0,
+                                      child: SizedBox(
+                                        width: itemWidth,
+                                        height: itemHeight,
+                                        child: Transform.scale(
+                                          scale: 1.05,
+                                          child: Opacity(
+                                            opacity: 0.9,
+                                            child: _buildCardWidget(note, cardThemeColor),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.35,
+                                      child: _buildCardWidget(note, cardThemeColor),
+                                    ),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(AppRadius.medium),
+                                        border: isHovered
+                                            ? Border.all(color: const Color(0xFF14B8A6), width: 3.0)
+                                            : null,
+                                      ),
+                                      child: _buildCardWidget(note, cardThemeColor),
                                     ),
                                   );
                                 },
-                                child: Hero(
-                                  tag: 'photonote_img_${note.id}',
-                                  child: AppCard(
-                                    margin: EdgeInsets.zero,
-                                    padding: EdgeInsets.zero,
-                                    borderColor: cardThemeColor.withOpacity(0.3),
-                                    shadowColor: cardThemeColor,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(AppRadius.medium - 1),
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            cardThemeColor.withOpacity(0.95),
-                                            cardThemeColor.withOpacity(0.70),
-                                          ],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                        ),
-                                      ),
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          // Actions dropdown button on the top-right
-                                          Positioned(
-                                            top: 2,
-                                            right: 2,
-                                            child: Material(
-                                              color: Colors.transparent,
-                                              child: IconButton(
-                                                icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                                                onPressed: () => _showOptionsDialog(note),
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.all(6),
-                                              ),
-                                            ),
-                                          ),
-
-                                          // Title centered in the card
-                                          Center(
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 24.0),
-                                              child: AppText(
-                                                note.title,
-                                                styleType: AppTextStyleType.bodyMedium,
-                                                styleOverride: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                  height: 1.3,
-                                                ),
-                                                textAlign: TextAlign.center,
-                                                maxLines: 4,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
                               ),
                             );
                           },
@@ -573,6 +545,80 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
           foregroundColor: Colors.white,
           onPressed: () => _showAddEditSheet(),
           child: const Icon(Icons.add_photo_alternate_rounded),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardWidget(PhotoNote note, Color cardThemeColor) {
+    return BounceButton(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoNoteViewerScreen(noteId: note.id),
+          ),
+        );
+      },
+      child: Hero(
+        tag: 'photonote_img_${note.id}',
+        child: AppCard(
+          margin: EdgeInsets.zero,
+          padding: EdgeInsets.zero,
+          borderColor: cardThemeColor.withOpacity(0.3),
+          shadowColor: cardThemeColor,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.medium - 1),
+              gradient: LinearGradient(
+                colors: [
+                  cardThemeColor.withOpacity(0.95),
+                  cardThemeColor.withOpacity(0.70),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Actions dropdown button on the top-right
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: IconButton(
+                      icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                      onPressed: () => _showOptionsDialog(note),
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                    ),
+                  ),
+                ),
+
+                // Title centered in the card
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 24.0),
+                    child: AppText(
+                      note.title,
+                      styleType: AppTextStyleType.bodyMedium,
+                      styleOverride: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        height: 1.3,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 4,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
