@@ -23,6 +23,7 @@ class PhotoNoteViewerScreen extends StatefulWidget {
 
 class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   bool _showUI = true;
+  bool _isZoomed = false;
   int _currentPage = 0;
   late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
@@ -32,15 +33,27 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+    _transformationController.addListener(_onTransformationChanged);
     WakelockHelper.enable();
   }
 
   @override
   void dispose() {
     WakelockHelper.disable();
+    _transformationController.removeListener(_onTransformationChanged);
     _pageController.dispose();
     _transformationController.dispose();
     super.dispose();
+  }
+
+  void _onTransformationChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    final isZoomedNow = scale > 1.05;
+    if (isZoomedNow != _isZoomed) {
+      setState(() {
+        _isZoomed = isZoomedNow;
+      });
+    }
   }
 
   Color _parseColor(String hex) {
@@ -258,10 +271,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 onDoubleTap: _handleDoubleTap,
                 child: PageView.builder(
                   controller: _pageController,
+                  physics: _isZoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const BouncingScrollPhysics(),
                   itemCount: totalImages,
                   onPageChanged: (idx) {
                     setState(() {
                       _currentPage = idx;
+                      _isZoomed = false;
                       _transformationController.value = Matrix4.identity();
                     });
                   },
@@ -272,6 +289,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         tag: index == 0 ? 'photonote_img_${note.id}' : 'photonote_img_${note.id}_$index',
                         child: InteractiveViewer(
                           transformationController: _transformationController,
+                          clipBehavior: Clip.none,
+                          panEnabled: true,
+                          scaleEnabled: true,
                           minScale: 1.0,
                           maxScale: 6.0,
                           child: Image.file(
