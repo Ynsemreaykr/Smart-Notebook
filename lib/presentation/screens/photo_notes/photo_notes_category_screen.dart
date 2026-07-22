@@ -228,6 +228,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     // Written Note (Optional)
                     TextField(
                       controller: noteTextController,
+                      textCapitalization: TextCapitalization.sentences,
                       maxLines: 3,
                       minLines: 1,
                       decoration: InputDecoration(

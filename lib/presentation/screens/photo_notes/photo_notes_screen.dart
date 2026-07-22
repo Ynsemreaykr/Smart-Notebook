@@ -314,6 +314,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     // Written Note (Optional)
                     TextField(
                       controller: noteTextController,
+                      textCapitalization: TextCapitalization.sentences,
                       maxLines: 3,
                       minLines: 1,
                       decoration: InputDecoration(

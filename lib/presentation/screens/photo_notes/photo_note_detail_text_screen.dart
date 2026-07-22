@@ -344,6 +344,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                         ),
                         child: TextField(
                           controller: _textController,
+                          textCapitalization: TextCapitalization.sentences,
                           autofocus: false, // DO NOT open keyboard automatically until tapped!
                           maxLines: null,
                           expands: true,
