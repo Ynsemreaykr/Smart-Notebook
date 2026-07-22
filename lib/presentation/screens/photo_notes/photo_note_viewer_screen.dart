@@ -5,12 +5,14 @@ import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../domain/models/photo_note.dart';
+import '../../../domain/models/flashcard.dart';
 import '../../../application/providers/photo_note_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/app_radius.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
+import '../../widgets/flip_card_widget.dart';
 import 'photo_note_detail_text_screen.dart';
 
 class PhotoNoteViewerScreen extends StatefulWidget {
@@ -237,6 +239,265 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  void _openFlashcardsSheet(BuildContext context, PhotoNote note) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
+      ),
+      builder: (ctx) {
+        return Consumer<PhotoNoteProvider>(
+          builder: (context, provider, child) {
+            final noteFlashcards = provider.getFlashcardsForNote(note.id);
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 24),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  AppText(
+                                    'Görsele Özel Bilgi Kartları (${noteFlashcards.length})',
+                                    styleType: AppTextStyleType.headingMedium,
+                                    styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  AppText(
+                                    note.title,
+                                    styleType: AppTextStyleType.caption,
+                                    color: AppColors.textSecondary,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF14B8A6),
+                      minimumSize: const Size(double.infinity, 44),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                    ),
+                    icon: const Icon(Icons.add_rounded, color: Colors.white),
+                    label: const AppText('Bu Görsele Yeni Bilgi Kartı Ekle', styleType: AppTextStyleType.label, color: Colors.white),
+                    onPressed: () {
+                      _showAddEditFlashcardDialogForNote(context, note);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  Expanded(
+                    child: noteFlashcards.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.style_rounded, size: 48, color: Color(0xFF14B8A6)),
+                                const SizedBox(height: 12),
+                                const AppText(
+                                  'Henüz bu görsele özel bilgi kartı eklenmemiş.',
+                                  styleType: AppTextStyleType.bodyMedium,
+                                  styleOverride: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                const SizedBox(height: 4),
+                                AppText(
+                                  'Örnek: Ön yüz: "Cebeci", Arka yüz: "Zırh ve silah temin eder" şeklinde kartlar ekleyebilirsiniz.',
+                                  styleType: AppTextStyleType.caption,
+                                  color: AppColors.textSecondary,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          )
+                        : GridView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 1.1,
+                            ),
+                            itemCount: noteFlashcards.length,
+                            itemBuilder: (context, index) {
+                              final card = noteFlashcards[index];
+                              return FlipCardWidget(
+                                flashcard: card,
+                                onOptionsTap: () => _showNoteFlashcardOptions(context, card, note),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAddEditFlashcardDialogForNote(BuildContext context, PhotoNote note, {Flashcard? card}) {
+    final frontController = TextEditingController(text: card?.frontText ?? '');
+    final backController = TextEditingController(text: card?.backText ?? '');
+    bool isEdit = card != null;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: AppSpacing.lg,
+            right: AppSpacing.lg,
+            top: AppSpacing.lg,
+            bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    AppText(
+                      isEdit ? 'Bilgi Kartını Düzenle' : 'Görsele Özel Bilgi Kartı Ekle',
+                      styleType: AppTextStyleType.headingMedium,
+                      styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                AppSpacing.gapHMd,
+                TextField(
+                  controller: frontController,
+                  textCapitalization: TextCapitalization.sentences,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    labelText: 'Ön Yüz (Kavram / Soru - Örn: Cebeci)',
+                    prefixIcon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                  ),
+                ),
+                AppSpacing.gapHMd,
+                TextField(
+                  controller: backController,
+                  textCapitalization: TextCapitalization.sentences,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Arka Yüz (Açıklama / Anlamı - Örn: Zırh ve silah temin eder)',
+                    prefixIcon: const Icon(Icons.info_outline_rounded, color: Color(0xFF14B8A6)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                  ),
+                ),
+                AppSpacing.gapHLg,
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14B8A6),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                  ),
+                  onPressed: () async {
+                    if (frontController.text.trim().isEmpty || backController.text.trim().isEmpty) {
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    if (isEdit) {
+                      await context.read<PhotoNoteProvider>().updateFlashcard(
+                        id: card!.id,
+                        frontText: frontController.text,
+                        backText: backController.text,
+                      );
+                    } else {
+                      await context.read<PhotoNoteProvider>().addFlashcard(
+                        frontText: frontController.text,
+                        backText: backController.text,
+                        category: note.category,
+                        noteId: note.id,
+                        color: note.color,
+                      );
+                    }
+                  },
+                  child: AppText(
+                    isEdit ? 'Kaydet' : 'Bilgi Kartını Kaydet',
+                    styleType: AppTextStyleType.label,
+                    styleOverride: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                  ),
+                ),
+                AppSpacing.gapHMd,
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showNoteFlashcardOptions(BuildContext context, Flashcard card, PhotoNote note) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.medium)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_rounded, color: Color(0xFF14B8A6)),
+              title: const AppText('Kartı Düzenle', styleType: AppTextStyleType.bodyMedium),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showAddEditFlashcardDialogForNote(context, note, card: card);
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline_rounded, color: AppColors.error),
+              title: AppText('Kartı Sil', styleType: AppTextStyleType.bodyMedium, color: AppColors.error),
+              onTap: () {
+                Navigator.pop(ctx);
+                context.read<PhotoNoteProvider>().deleteFlashcard(card.id);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PhotoNoteProvider>(
@@ -255,6 +516,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         final cardColor = _parseColor(note.color);
         final formattedDate = DateFormat('dd MMM yyyy, HH:mm', 'tr_TR').format(note.updatedAt);
         final totalImages = note.imagePaths.length;
+        final noteFlashcards = provider.getFlashcardsForNote(note.id);
 
         if (_currentPage >= totalImages) {
           _currentPage = totalImages > 0 ? totalImages - 1 : 0;
@@ -351,6 +613,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               icon: const Icon(Icons.add_photo_alternate_rounded, color: Colors.white, size: 26),
                               tooltip: 'Ek Görsel Ekle',
                               onPressed: () => _pickAndAddExtraImage(note),
+                            ),
+                            IconButton(
+                              icon: Icon(
+                                Icons.style_rounded,
+                                color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                                size: 26,
+                              ),
+                              tooltip: 'Görsele Özel Bilgi Kartları',
+                              onPressed: () => _openFlashcardsSheet(context, note),
                             ),
                             IconButton(
                               icon: Icon(

@@ -538,11 +538,17 @@ class PhotoNoteProvider extends ChangeNotifier {
     return _flashcards.where((f) => f.category.trim() == trimmed).toList();
   }
 
+  /// Get list of flashcards linked specifically to a PhotoNote
+  List<Flashcard> getFlashcardsForNote(String noteId) {
+    return _flashcards.where((f) => f.noteId == noteId).toList();
+  }
+
   /// Add a new Flashcard (Bilgi Kartı)
   Future<Flashcard> addFlashcard({
     required String frontText,
     required String backText,
     required String category,
+    String? noteId,
     String color = '#14B8A6',
   }) async {
     final id = 'flashcard_${_uuid.v4()}';
@@ -553,6 +559,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       frontText: frontText.trim(),
       backText: backText.trim(),
       category: category.trim(),
+      noteId: noteId,
       color: color,
       createdAt: now,
       updatedAt: now,
