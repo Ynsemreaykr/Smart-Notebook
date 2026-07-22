@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +21,10 @@ class PhotoNoteDetailTextScreen extends StatefulWidget {
 
 class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
   late TextEditingController _textController;
+  Timer? _debounceTimer;
+  bool _isSaving = false;
+
+  final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️'];
 
   @override
   void initState() {
@@ -28,12 +33,62 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
     final initialNote = noteIndex != -1 ? provider.photoNotes[noteIndex].note : '';
     _textController = TextEditingController(text: initialNote);
+    _textController.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _saveNoteImmediate();
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    _debounceTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isSaving = true;
+      });
+    }
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _saveNoteImmediate();
+    });
+  }
+
+  Future<void> _saveNoteImmediate() async {
+    if (!mounted) return;
+    try {
+      final provider = context.read<PhotoNoteProvider>();
+      final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
+      if (noteIndex != -1) {
+        await provider.updatePhotoNoteText(widget.noteId, _textController.text);
+      }
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+  }
+
+  void _insertSymbol(String symbol) {
+    final text = _textController.text;
+    final selection = _textController.selection;
+    int start = selection.start;
+    int end = selection.end;
+
+    if (start < 0 || start > text.length) start = text.length;
+    if (end < 0 || end > text.length) end = text.length;
+
+    final newText = text.replaceRange(start, end, symbol);
+    _textController.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + symbol.length),
+    );
+
+    _saveNoteImmediate();
   }
 
   Color _parseColor(String hex) {
@@ -41,23 +96,6 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
       return Color(int.parse(hex.replaceFirst('#', '0xFF')));
     } catch (_) {
       return const Color(0xFF1E3A8A);
-    }
-  }
-
-  Future<void> _saveNote(PhotoNote note) async {
-    // Unfocus keyboard if open
-    FocusScope.of(context).unfocus();
-    
-    await context.read<PhotoNoteProvider>().updatePhotoNoteText(note.id, _textController.text);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ders notları başarıyla kaydedildi.'),
-          backgroundColor: Color(0xFF14B8A6),
-          duration: Duration(seconds: 2),
-        ),
-      );
     }
   }
 
@@ -84,158 +122,246 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
         final note = notes[noteIndex];
         final cardColor = _parseColor(note.color);
 
-        return AppContainer(
-          hasGradient: true,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            appBar: AppBar(
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppText(
-                    note.title,
-                    styleType: AppTextStyleType.headingMedium,
-                    styleOverride: const TextStyle(fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  AppText(
-                    'Görsel Ders Notu • ${note.category.isEmpty ? 'Genel' : note.category}',
-                    styleType: AppTextStyleType.caption,
-                    color: AppColors.textSecondary,
+        return PopScope(
+          onPopInvokedWithResult: (didPop, result) {
+            _saveNoteImmediate();
+          },
+          child: AppContainer(
+            hasGradient: true,
+            child: Scaffold(
+              backgroundColor: Colors.transparent,
+              appBar: AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                  onPressed: () {
+                    _saveNoteImmediate();
+                    Navigator.pop(context);
+                  },
+                ),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppText(
+                      note.title,
+                      styleType: AppTextStyleType.headingMedium,
+                      styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    AppText(
+                      'Görsel Ders Notu • ${note.category.isEmpty ? 'Genel' : note.category}',
+                      styleType: AppTextStyleType.caption,
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
+                ),
+                actions: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 16),
+                    child: Center(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        child: _isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Color(0xFF14B8A6),
+                                ),
+                              )
+                            : Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF14B8A6).withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(AppRadius.small),
+                                  border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.5), width: 1),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.cloud_done_rounded, size: 14, color: Color(0xFF14B8A6)),
+                                    SizedBox(width: 4),
+                                    AppText(
+                                      'Kaydedildi',
+                                      styleType: AppTextStyleType.caption,
+                                      styleOverride: TextStyle(
+                                        color: Color(0xFF14B8A6),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              actions: [
-                IconButton(
-                  icon: const Icon(Icons.save_rounded, color: Color(0xFF14B8A6)),
-                  tooltip: 'Notu Kaydet',
-                  onPressed: () => _saveNote(note),
-                ),
-                AppSpacing.gapWSm,
-              ],
-            ),
-            body: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Visual Card Info Header (Shows which photo note card this belongs to)
-                  AppCard(
-                    margin: EdgeInsets.zero,
-                    padding: const EdgeInsets.all(12.0),
-                    borderColor: cardColor.withOpacity(0.4),
-                    shadowColor: cardColor,
-                    child: Row(
-                      children: [
-                        // Image Thumbnail
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadius.small),
-                          child: Image.file(
-                            File(note.imagePath),
-                            width: 52,
-                            height: 52,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+              body: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Visual Card Info Header (Shows which photo note card this belongs to)
+                    AppCard(
+                      margin: EdgeInsets.zero,
+                      padding: const EdgeInsets.all(12.0),
+                      borderColor: cardColor.withOpacity(0.4),
+                      shadowColor: cardColor,
+                      child: Row(
+                        children: [
+                          // Image Thumbnail
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(AppRadius.small),
+                            child: Image.file(
+                              File(note.imagePath),
                               width: 52,
                               height: 52,
-                              color: cardColor,
-                              child: const Icon(Icons.image_not_supported_rounded, color: Colors.white),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: 52,
+                                height: 52,
+                                color: cardColor,
+                                child: const Icon(Icons.image_not_supported_rounded, color: Colors.white),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Title and info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.collections_bookmark_rounded, size: 16, color: Color(0xFF14B8A6)),
-                                  const SizedBox(width: 4),
-                                  AppText(
-                                    note.category.isEmpty ? 'Genel' : note.category,
-                                    styleType: AppTextStyleType.caption,
-                                    styleOverride: const TextStyle(
-                                      color: Color(0xFF14B8A6),
-                                      fontWeight: FontWeight.bold,
+                          const SizedBox(width: 12),
+                          // Title and info
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.collections_bookmark_rounded, size: 16, color: Color(0xFF14B8A6)),
+                                    const SizedBox(width: 4),
+                                    AppText(
+                                      note.category.isEmpty ? 'Genel' : note.category,
+                                      styleType: AppTextStyleType.caption,
+                                      styleOverride: const TextStyle(
+                                        color: Color(0xFF14B8A6),
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              AppText(
-                                note.title,
-                                styleType: AppTextStyleType.bodyLarge,
-                                styleOverride: const TextStyle(fontWeight: FontWeight.bold),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              AppText(
-                                'Bu görsel için ek ders notları ve açıklamalar',
-                                styleType: AppTextStyleType.caption,
-                                color: AppColors.textSecondary,
-                              ),
-                            ],
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                AppText(
+                                  note.title,
+                                  styleType: AppTextStyleType.bodyLarge,
+                                  styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                AppText(
+                                  'Bu görsel için ek ders notları ve açıklamalar',
+                                  styleType: AppTextStyleType.caption,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  AppSpacing.gapHMd,
+                    AppSpacing.gapHMd,
 
-                  // Main Text Area Container
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    // Quick Symbols / Arrows Toolbar
+                    Container(
+                      height: 48,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
                         borderRadius: BorderRadius.circular(AppRadius.medium),
-                        border: Border.all(color: AppColors.surfaceLighter, width: 1.5),
+                        border: Border.all(color: AppColors.surfaceLighter, width: 1),
                       ),
-                      child: TextField(
-                        controller: _textController,
-                        autofocus: false, // DO NOT open keyboard automatically until tapped!
-                        maxLines: null,
-                        expands: true,
-                        keyboardType: TextInputType.multiline,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
-                        decoration: InputDecoration(
-                          hintText: 'Örn:\n• Bu haritadaki bafra ovası Karadeniz bölgesindedir.\n• Çarşamba ovası Yeşilırmak deltasında yer alır...\n\nNot almak için ekrana dokunabilirsiniz.',
-                          hintStyle: TextStyle(color: AppColors.textMuted.withOpacity(0.6), fontSize: 14, height: 1.5),
-                          border: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          enabledBorder: InputBorder.none,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.code_rounded, size: 18, color: Color(0xFF14B8A6)),
+                          const SizedBox(width: 6),
+                          const AppText(
+                            'Simgeler:',
+                            styleType: AppTextStyleType.caption,
+                            styleOverride: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _quickSymbols.length,
+                              itemBuilder: (context, index) {
+                                final sym = _quickSymbols[index];
+                                return Container(
+                                  margin: const EdgeInsets.only(right: 6),
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () => _insertSymbol(sym),
+                                      borderRadius: BorderRadius.circular(AppRadius.small),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.surfaceLighter,
+                                          borderRadius: BorderRadius.circular(AppRadius.small),
+                                          border: Border.all(
+                                            color: const Color(0xFF14B8A6).withOpacity(0.3),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          sym,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+
+                    // Main Text Area Container
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                          border: Border.all(color: AppColors.surfaceLighter, width: 1.5),
+                        ),
+                        child: TextField(
+                          controller: _textController,
+                          autofocus: false, // DO NOT open keyboard automatically until tapped!
+                          maxLines: null,
+                          expands: true,
+                          keyboardType: TextInputType.multiline,
+                          textAlignVertical: TextAlignVertical.top,
+                          style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
+                          decoration: InputDecoration(
+                            hintText: 'Örn:\n• Bu haritadaki Bafra Ovası ↑ Karadeniz bölgesindedir.\n• Çarşamba Ovası → Yeşilırmak deltasında yer alır.\n\nNot almak için ekrana dokunabilirsiniz.',
+                            hintStyle: TextStyle(color: AppColors.textMuted.withOpacity(0.6), fontSize: 14, height: 1.5),
+                            border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  AppSpacing.gapHMd,
-
-                  // Save Action Button
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF14B8A6),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                    ),
-                    onPressed: () => _saveNote(note),
-                    icon: const Icon(Icons.save_rounded),
-                    label: const AppText(
-                      'Notu Kaydet',
-                      styleType: AppTextStyleType.label,
-                      styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
