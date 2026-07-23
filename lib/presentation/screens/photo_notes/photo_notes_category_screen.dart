@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:hive/hive.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../domain/models/flashcard.dart';
 import '../../../application/providers/photo_note_provider.dart';
@@ -998,6 +999,8 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
         ),
       ),
     );
+  }
+
   Widget _buildUnitCard(String subName, String fullPath, int noteCount) {
     return BounceButton(
       onTap: () {
@@ -1363,7 +1366,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                           borderRadius: BorderRadius.circular(AppRadius.medium),
                           border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.2), width: 1),
                         ),
-                        child: const Center(
+                        child: Center(
                           child: AppText(
                             'Bu üniteye henüz genel bilgi kartı eklenmemiş.',
                             styleType: AppTextStyleType.caption,
