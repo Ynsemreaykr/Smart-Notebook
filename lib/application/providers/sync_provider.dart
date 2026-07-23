@@ -132,7 +132,10 @@ class SyncProvider extends ChangeNotifier {
     _syncError = null;
     notifyListeners();
 
+    String currentStep = "Başlatılıyor";
+
     try {
+      currentStep = "1. Hive Kutuları Okunuyor";
       // 1. Fetch all local data from Hive Boxes
       final books = DatabaseService.getBooksBox().values.toList();
       final pages = DatabaseService.getPagesBox().values.toList();
@@ -167,6 +170,7 @@ class SyncProvider extends ChangeNotifier {
         settings[key.toString()] = settingsBox.get(key);
       }
 
+      currentStep = "2. JSON Paketine Dönüştürülüyor";
       // 2. Build JSON payload
       final rawPayload = {
         'books': books,
@@ -195,6 +199,7 @@ class SyncProvider extends ChangeNotifier {
         return nonEncodable.toString();
       });
 
+      currentStep = "3. Kullanıcı Kimliği Doğrulanıyor (UID: ${user.uid})";
       // Refresh user auth token to ensure active credentials for Firestore
       try {
         await user.getIdToken(true);
@@ -202,6 +207,7 @@ class SyncProvider extends ChangeNotifier {
         debugPrint('Token refresh warning: $tokenErr');
       }
 
+      currentStep = "4. Firestore'a Gönderiliyor (Boyut: ${jsonString.length} kr)";
       // 4. Chunk jsonString into safe 500k character blocks so Firestore 1MB limit per field is never hit
       const int chunkSize = 500000;
       final int totalChunks = (jsonString.length / chunkSize).ceil();
@@ -234,10 +240,16 @@ class SyncProvider extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
       return true;
-    } catch (e, stack) {
-      debugPrint('Backup Error: $e\n$stack');
+    } on FirebaseException catch (fe) {
+      debugPrint('Backup FirebaseException: [$currentStep] ${fe.code} - ${fe.message}');
       _isSyncing = false;
-      _syncError = "Yedekleme hatası: $e";
+      _syncError = "[$currentStep]\nFirebase Hata: [${fe.code}]\n${fe.message ?? fe.toString()}";
+      notifyListeners();
+      return false;
+    } catch (e, stack) {
+      debugPrint('Backup Error: [$currentStep] $e\n$stack');
+      _isSyncing = false;
+      _syncError = "[$currentStep]\nHata: $e";
       notifyListeners();
       return false;
     }
