@@ -26,6 +26,16 @@ class PhotoNoteViewerScreen extends StatefulWidget {
 
 class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   bool _showUI = true;
+  final List<String> _presetColors = [
+    '#3B82F6', // Blue
+    '#EF4444', // Red
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#8B5CF6', // Purple
+    '#EC4899', // Pink
+    '#06B6D4', // Cyan
+    '#6B7280', // Grey
+  ];
   bool _isZoomed = false;
   int _currentPage = 0;
   late PageController _pageController;
@@ -365,13 +375,26 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                             ],
                                           ),
                                         ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(4),
-                                          tooltip: 'Bu Başlığa Kart Ekle',
-                                          onPressed: () => _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupTitle),
-                                        ),
+                                         Row(
+                                           mainAxisSize: MainAxisSize.min,
+                                           children: [
+                                             IconButton(
+                                               icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
+                                               constraints: const BoxConstraints(),
+                                               padding: const EdgeInsets.all(4),
+                                               tooltip: 'Başlığı Düzenle',
+                                               onPressed: () => _showRenameHeadingDialogForNote(context, note, groupTitle),
+                                             ),
+                                             const SizedBox(width: 4),
+                                             IconButton(
+                                               icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
+                                               constraints: const BoxConstraints(),
+                                               padding: const EdgeInsets.all(4),
+                                               tooltip: 'Bu Başlığa Kart Ekle',
+                                               onPressed: () => _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupTitle),
+                                             ),
+                                           ],
+                                         ),
                                       ],
                                     ),
                                   ),
@@ -428,10 +451,64 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  Color _parseColor(String hex) {
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (_) {
+      return const Color(0xFF1E3A8A);
+    }
+  }
+
+  void _showRenameHeadingDialogForNote(BuildContext context, PhotoNote note, String oldTitle) {
+    final controller = TextEditingController(text: oldTitle);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText(
+          'Başlığı Yeniden Adlandır',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: SingleTapCursorTextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Yeni Başlık Adı',
+            prefixIcon: Icon(Icons.edit_rounded, color: Color(0xFF14B8A6)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          TextButton(
+            onPressed: () {
+              final newTitle = controller.text.trim();
+              Navigator.pop(ctx);
+              if (newTitle.isNotEmpty && newTitle != oldTitle) {
+                context.read<PhotoNoteProvider>().renameFlashcardGroup(
+                  oldGroupTitle: oldTitle,
+                  newGroupTitle: newTitle,
+                  category: note.category,
+                  noteId: note.id,
+                );
+              }
+            },
+            child: AppText('Kaydet', styleType: AppTextStyleType.label, color: const Color(0xFF14B8A6)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddEditFlashcardDialogForNote(BuildContext context, PhotoNote note, {Flashcard? card, String? defaultGroup}) {
     final frontController = TextEditingController(text: card?.frontText ?? '');
     final backController = TextEditingController(text: card?.backText ?? '');
     final groupController = TextEditingController(text: card?.groupTitle ?? defaultGroup ?? 'Genel Bilgiler');
+    String selectedColor = card?.color ?? note.color;
     bool isEdit = card != null;
 
     showModalBottomSheet(
@@ -442,105 +519,142 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.large)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: AppSpacing.lg,
-            right: AppSpacing.lg,
-            top: AppSpacing.lg,
-            bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: AppSpacing.lg,
+                right: AppSpacing.lg,
+                top: AppSpacing.lg,
+                bottom: MediaQuery.of(context).viewInsets.bottom + AppSpacing.lg,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    AppText(
-                      isEdit ? 'Bilgi Kartını Düzenle' : 'Görsele Özel Bilgi Kartı Ekle',
-                      styleType: AppTextStyleType.headingMedium,
-                      styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        AppText(
+                          isEdit ? 'Bilgi Kartını Düzenle' : 'Görsele Özel Bilgi Kartı Ekle',
+                          styleType: AppTextStyleType.headingMedium,
+                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.pop(ctx),
+                    AppSpacing.gapHMd,
+                    SingleTapCursorTextField(
+                      controller: groupController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Kart Başlığı / Konu Grubu (Örn: Askeri Teşkilat)',
+                        prefixIcon: const Icon(Icons.topic_rounded, color: Color(0xFF14B8A6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
                     ),
+                    AppSpacing.gapHMd,
+                    SingleTapCursorTextField(
+                      controller: frontController,
+                      textCapitalization: TextCapitalization.sentences,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'Ön Yüz (Kavram / Soru - Örn: Cebeci)',
+                        prefixIcon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+                    SingleTapCursorTextField(
+                      controller: backController,
+                      textCapitalization: TextCapitalization.sentences,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Arka Yüz (Açıklama / Anlamı - Örn: Zırh ve silah temin eder)',
+                        prefixIcon: const Icon(Icons.info_outline_rounded, color: Color(0xFF14B8A6)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
+
+                    // Color Selector for Image Flashcard
+                    const AppText('Kart Tema Rengi:', styleType: AppTextStyleType.label),
+                    AppSpacing.gapHSm,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: _presetColors.map((hex) {
+                        final color = _parseColor(hex);
+                        final isSelected = selectedColor == hex;
+                        return GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              selectedColor = hex;
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
+                              boxShadow: isSelected ? [BoxShadow(color: color.withOpacity(0.6), blurRadius: 8, spreadRadius: 2)] : null,
+                            ),
+                            child: isSelected ? const Icon(Icons.check_rounded, color: Colors.white, size: 18) : null,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    AppSpacing.gapHLg,
+
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF14B8A6),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
+                      ),
+                      onPressed: () async {
+                        if (frontController.text.trim().isEmpty || backController.text.trim().isEmpty) {
+                          return;
+                        }
+                        Navigator.pop(ctx);
+                        final grp = groupController.text.trim().isEmpty ? 'Genel Bilgiler' : groupController.text.trim();
+                        if (isEdit) {
+                          await context.read<PhotoNoteProvider>().updateFlashcard(
+                            id: card!.id,
+                            frontText: frontController.text,
+                            backText: backController.text,
+                            groupTitle: grp,
+                            color: selectedColor,
+                          );
+                        } else {
+                          await context.read<PhotoNoteProvider>().addFlashcard(
+                            frontText: frontController.text,
+                            backText: backController.text,
+                            category: note.category,
+                            noteId: note.id,
+                            groupTitle: grp,
+                            color: selectedColor,
+                          );
+                        }
+                      },
+                      child: AppText(
+                        isEdit ? 'Kaydet' : 'Bilgi Kartını Kaydet',
+                        styleType: AppTextStyleType.label,
+                        styleOverride: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                    AppSpacing.gapHMd,
                   ],
                 ),
-                AppSpacing.gapHMd,
-                SingleTapCursorTextField(
-                  controller: groupController,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    labelText: 'Kart Başlığı / Konu Grubu (Örn: Askeri Teşkilat)',
-                    prefixIcon: const Icon(Icons.topic_rounded, color: Color(0xFF14B8A6)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                  ),
-                ),
-                AppSpacing.gapHMd,
-                SingleTapCursorTextField(
-                  controller: frontController,
-                  textCapitalization: TextCapitalization.sentences,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    labelText: 'Ön Yüz (Kavram / Soru - Örn: Cebeci)',
-                    prefixIcon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                  ),
-                ),
-                AppSpacing.gapHMd,
-                SingleTapCursorTextField(
-                  controller: backController,
-                  textCapitalization: TextCapitalization.sentences,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    labelText: 'Arka Yüz (Açıklama / Anlamı - Örn: Zırh ve silah temin eder)',
-                    prefixIcon: const Icon(Icons.info_outline_rounded, color: Color(0xFF14B8A6)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                  ),
-                ),
-                AppSpacing.gapHLg,
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF14B8A6),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.medium)),
-                  ),
-                  onPressed: () async {
-                    if (frontController.text.trim().isEmpty || backController.text.trim().isEmpty) {
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    final grp = groupController.text.trim().isEmpty ? 'Genel Bilgiler' : groupController.text.trim();
-                    if (isEdit) {
-                      await context.read<PhotoNoteProvider>().updateFlashcard(
-                        id: card!.id,
-                        frontText: frontController.text,
-                        backText: backController.text,
-                        groupTitle: grp,
-                      );
-                    } else {
-                      await context.read<PhotoNoteProvider>().addFlashcard(
-                        frontText: frontController.text,
-                        backText: backController.text,
-                        category: note.category,
-                        noteId: note.id,
-                        groupTitle: grp,
-                        color: note.color,
-                      );
-                    }
-                  },
-                  child: AppText(
-                    isEdit ? 'Kaydet' : 'Bilgi Kartını Kaydet',
-                    styleType: AppTextStyleType.label,
-                    styleOverride: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
-                  ),
-                ),
-                AppSpacing.gapHMd,
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

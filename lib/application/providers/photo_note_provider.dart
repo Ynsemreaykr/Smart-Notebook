@@ -668,8 +668,11 @@ class PhotoNoteProvider extends ChangeNotifier {
     final box = Hive.box(_boxName);
     final targetCards = _flashcards.where((f) {
       final matchCat = f.category.trim() == category.trim();
-      final matchNote = noteId == null || f.noteId == noteId;
-      final matchGroup = f.groupTitle.trim() == oldGroupTitle.trim();
+      final matchNote = (noteId == null || noteId.trim().isEmpty)
+          ? (f.noteId == null || f.noteId!.trim().isEmpty)
+          : f.noteId == noteId;
+      final fGroup = f.groupTitle.trim().isEmpty ? 'Genel Bilgiler' : f.groupTitle.trim();
+      final matchGroup = fGroup == oldGroupTitle.trim();
       return matchCat && matchNote && matchGroup;
     }).toList();
 
