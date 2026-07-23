@@ -49,15 +49,15 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
   void _handleDragUpdate(DragUpdateDetails details) {
     final dy = details.globalPosition.dy;
     final screenHeight = MediaQuery.of(context).size.height;
-    final topEdge = 160.0;
-    final bottomEdge = screenHeight - 160.0;
+    final topEdge = 220.0;
+    final bottomEdge = screenHeight - 180.0;
 
     if (dy < topEdge) {
-      final ratio = ((topEdge - dy) / topEdge).clamp(0.1, 1.0);
-      _startAutoScroll(-16.0 * ratio, _categoryScrollController);
+      final ratio = ((topEdge - dy) / topEdge).clamp(0.12, 1.0);
+      _startAutoScroll(-28.0 * ratio, _categoryScrollController);
     } else if (dy > bottomEdge) {
-      final ratio = ((dy - bottomEdge) / 160.0).clamp(0.1, 1.0);
-      _startAutoScroll(16.0 * ratio, _categoryScrollController);
+      final ratio = ((dy - bottomEdge) / 180.0).clamp(0.12, 1.0);
+      _startAutoScroll(28.0 * ratio, _categoryScrollController);
     } else {
       _stopAutoScroll();
     }
@@ -65,7 +65,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
   void _startAutoScroll(double step, ScrollController controller) {
     if (_autoScrollTimer?.isActive ?? false) return;
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 25), (_) {
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!controller.hasClients) {
         _stopAutoScroll();
         return;

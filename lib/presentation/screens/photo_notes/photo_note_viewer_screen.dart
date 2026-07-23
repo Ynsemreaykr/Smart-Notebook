@@ -45,7 +45,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   void _startAutoScroll(double step, ScrollController controller) {
     if (_autoScrollTimer?.isActive ?? false) return;
-    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 25), (_) {
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
       if (!controller.hasClients) {
         _stopAutoScroll();
         return;
@@ -279,15 +279,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     void handleSheetDragUpdate(DragUpdateDetails details) {
       final dy = details.globalPosition.dy;
       final screenHeight = MediaQuery.of(context).size.height;
-      final sheetTop = screenHeight * 0.20 + 80;
-      final sheetBottom = screenHeight - 60;
+      final sheetTop = screenHeight * 0.20 + 130;
+      final sheetBottom = screenHeight - 80;
 
       if (dy < sheetTop) {
-        final ratio = ((sheetTop - dy) / 80).clamp(0.1, 1.0);
-        _startAutoScroll(-16.0 * ratio, sheetScrollController);
+        final ratio = ((sheetTop - dy) / 130).clamp(0.12, 1.0);
+        _startAutoScroll(-28.0 * ratio, sheetScrollController);
       } else if (dy > sheetBottom) {
-        final ratio = ((dy - sheetBottom) / 60).clamp(0.1, 1.0);
-        _startAutoScroll(16.0 * ratio, sheetScrollController);
+        final ratio = ((dy - sheetBottom) / 80).clamp(0.12, 1.0);
+        _startAutoScroll(28.0 * ratio, sheetScrollController);
       } else {
         _stopAutoScroll();
       }
