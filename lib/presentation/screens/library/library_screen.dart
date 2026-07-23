@@ -58,7 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   void _openBook(Book book) async {
     final pageProvider = context.read<PageProvider>();
-    await pageProvider.loadPages(book.id);
+    pageProvider.loadPages(book.id);
     final pages = pageProvider.pages;
 
     if (!mounted) return;

@@ -586,8 +586,9 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildTopInterface() {
     final hasBg = _pages.isNotEmpty &&
@@ -1173,15 +1174,15 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.import_contacts_rounded, size: 18, color: AppColors.primary),
+                    Icon(Icons.import_contacts_rounded, size: 18, color: AppColors.primary),
                     const SizedBox(width: 6),
                     AppText(
                       'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
                       styleType: AppTextStyleType.bodyMedium,
-                      styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                      styleOverride: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.arrow_drop_down, color: AppColors.primary, size: 18),
+                    Icon(Icons.arrow_drop_down, color: AppColors.primary, size: 18),
                   ],
                 ),
               ),
