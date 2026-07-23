@@ -340,63 +340,103 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                 final cards = entry.value;
 
                                 return [
-                                  // Heading Header Row
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 12, bottom: 8),
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF14B8A6).withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(AppRadius.medium),
-                                      border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.35), width: 1),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.topic_rounded, color: Color(0xFF14B8A6), size: 18),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: AppText(
-                                                  groupTitle,
-                                                  styleType: AppTextStyleType.bodyMedium,
-                                                  styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              AppText(
-                                                '${cards.length} Kart',
-                                                styleType: AppTextStyleType.caption,
-                                                color: Colors.white70,
-                                              ),
-                                            ],
+                                  // Heading Header Row (Acts as DragTarget to receive dropped flashcards)
+                                  DragTarget<Flashcard>(
+                                    onWillAcceptWithDetails: (details) => details.data.groupTitle.trim() != groupTitle.trim(),
+                                    onAcceptWithDetails: (details) async {
+                                      final movedCard = details.data;
+                                      await context.read<PhotoNoteProvider>().moveFlashcardToGroup(
+                                            flashcardId: movedCard.id,
+                                            targetGroupTitle: groupTitle,
+                                          );
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Kart "$groupTitle" başlığına taşındı'),
+                                            duration: const Duration(seconds: 2),
+                                            backgroundColor: const Color(0xFF14B8A6),
                                           ),
+                                        );
+                                      }
+                                    },
+                                    builder: (context, candidateData, rejectedData) {
+                                      final isHovering = candidateData.isNotEmpty;
+                                      return AnimatedContainer(
+                                        duration: const Duration(milliseconds: 200),
+                                        margin: const EdgeInsets.only(top: 12, bottom: 8),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: isHovering
+                                              ? const Color(0xFF14B8A6).withOpacity(0.35)
+                                              : const Color(0xFF14B8A6).withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                          border: Border.all(
+                                            color: isHovering
+                                                ? const Color(0xFF14B8A6)
+                                                : const Color(0xFF14B8A6).withOpacity(0.35),
+                                            width: isHovering ? 2.5 : 1,
+                                          ),
+                                          boxShadow: isHovering
+                                              ? [BoxShadow(color: const Color(0xFF14B8A6).withOpacity(0.4), blurRadius: 10, spreadRadius: 2)]
+                                              : null,
                                         ),
-                                         Row(
-                                           mainAxisSize: MainAxisSize.min,
-                                           children: [
-                                             IconButton(
-                                               icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
-                                               constraints: const BoxConstraints(),
-                                               padding: const EdgeInsets.all(4),
-                                               tooltip: 'Başlığı Düzenle',
-                                               onPressed: () => _showRenameHeadingDialogForNote(context, note, groupTitle),
-                                             ),
-                                             const SizedBox(width: 4),
-                                             IconButton(
-                                               icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
-                                               constraints: const BoxConstraints(),
-                                               padding: const EdgeInsets.all(4),
-                                               tooltip: 'Bu Başlığa Kart Ekle',
-                                               onPressed: () => _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupTitle),
-                                             ),
-                                           ],
-                                         ),
-                                      ],
-                                    ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    isHovering ? Icons.move_to_inbox_rounded : Icons.topic_rounded,
+                                                    color: const Color(0xFF14B8A6),
+                                                    size: 18,
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: AppText(
+                                                      isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
+                                                      styleType: AppTextStyleType.bodyMedium,
+                                                      styleOverride: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  AppText(
+                                                    '${cards.length} Kart',
+                                                    styleType: AppTextStyleType.caption,
+                                                    color: Colors.white70,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
+                                                  constraints: const BoxConstraints(),
+                                                  padding: const EdgeInsets.all(4),
+                                                  tooltip: 'Başlığı Düzenle',
+                                                  onPressed: () => _showRenameHeadingDialogForNote(context, note, groupTitle),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                IconButton(
+                                                  icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
+                                                  constraints: const BoxConstraints(),
+                                                  padding: const EdgeInsets.all(4),
+                                                  tooltip: 'Bu Başlığa Kart Ekle',
+                                                  onPressed: () => _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupTitle),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
                                   ),
 
                                   // Grid of cards under this heading
@@ -412,9 +452,34 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     itemCount: cards.length,
                                     itemBuilder: (context, index) {
                                       final card = cards[index];
-                                      return FlipCardWidget(
-                                        flashcard: card,
-                                        onOptionsTap: () => _showNoteFlashcardOptions(context, card, note),
+                                      return LongPressDraggable<Flashcard>(
+                                        data: card,
+                                        feedback: Material(
+                                          elevation: 8,
+                                          color: Colors.transparent,
+                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                          child: SizedBox(
+                                            width: (MediaQuery.of(context).size.width - 44) / 2,
+                                            height: 140,
+                                            child: Opacity(
+                                              opacity: 0.9,
+                                              child: FlipCardWidget(
+                                                flashcard: card,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        childWhenDragging: Opacity(
+                                          opacity: 0.25,
+                                          child: FlipCardWidget(
+                                            flashcard: card,
+                                            onOptionsTap: () {},
+                                          ),
+                                        ),
+                                        child: FlipCardWidget(
+                                          flashcard: card,
+                                          onOptionsTap: () => _showNoteFlashcardOptions(context, card, note),
+                                        ),
                                       );
                                     },
                                   ),
