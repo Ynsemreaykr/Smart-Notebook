@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:hive/hive.dart';
 import '../../domain/models/book.dart';
 import '../../domain/models/page.dart';
@@ -21,10 +24,13 @@ class SyncProvider extends ChangeNotifier {
   bool _isSyncing = false;
   String? _syncError;
   DateTime? _lastBackupTime;
+  String _imageProgress = '';
 
   bool get isFirebaseAvailable => _isFirebaseAvailable;
   bool get isSyncing => _isSyncing;
   String? get syncError => _syncError;
+  String get imageProgress => _imageProgress;
+
   DateTime? get lastBackupTime => _lastBackupTime;
   User? get currentUser => _isFirebaseAvailable ? _auth.currentUser : null;
 
@@ -197,6 +203,117 @@ class SyncProvider extends ChangeNotifier {
     return user.uid;
   }
 
+  /// Returns the Firebase Storage path prefix for a user's images.
+  String _storagePrefix(User user) {
+    final email = user.email;
+    if (email != null && email.isNotEmpty) {
+      return 'users/${email.toLowerCase().trim()}';
+    }
+    return 'users/${user.uid}';
+  }
+
+  /// Uploads all local photo note images to Firebase Storage.
+  /// Returns a map: localPath → storageUrl (download URL).
+  Future<Map<String, String>> _uploadImagesToStorage(
+      User user, List<Map<String, dynamic>> photoNotes) async {
+    final Map<String, String> pathToUrl = {};
+    final storage = FirebaseStorage.instance;
+    final prefix = _storagePrefix(user);
+
+    // Collect all unique local paths from all photo notes
+    final Set<String> allPaths = {};
+    for (final n in photoNotes) {
+      final paths = n['imagePaths'];
+      if (paths is List) {
+        for (final p in paths) {
+          if (p is String && p.isNotEmpty) allPaths.add(p);
+        }
+      }
+      final single = n['imagePath'];
+      if (single is String && single.isNotEmpty) allPaths.add(single);
+    }
+
+    int done = 0;
+    final total = allPaths.length;
+
+    for (final localPath in allPaths) {
+      try {
+        final file = File(localPath);
+        if (!await file.exists()) continue;
+
+        final filename = localPath.split('/').last.split('\\').last;
+        final ref = storage.ref('$prefix/images/$filename');
+
+        // Check if already uploaded (skip to save bandwidth)
+        String downloadUrl;
+        try {
+          downloadUrl = await ref.getDownloadURL();
+        } catch (_) {
+          // Not uploaded yet, upload now
+          await ref.putFile(file);
+          downloadUrl = await ref.getDownloadURL();
+        }
+        pathToUrl[localPath] = downloadUrl;
+
+        done++;
+        _imageProgress = 'Görsel $done/$total yükleniyor...';
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Image upload error for $localPath: $e');
+      }
+    }
+    _imageProgress = '';
+    notifyListeners();
+    return pathToUrl;
+  }
+
+  /// Downloads all images from Firebase Storage to local app documents directory.
+  /// Returns a map: storageUrl → newLocalPath
+  Future<Map<String, String>> _downloadImagesFromStorage(
+      User user, List<Map<String, dynamic>> photoNotes) async {
+    final Map<String, String> urlToLocal = {};
+    final dir = await getApplicationDocumentsDirectory();
+
+    // Collect all unique storage URLs
+    final Set<String> allUrls = {};
+    for (final n in photoNotes) {
+      final paths = n['imagePaths'];
+      if (paths is List) {
+        for (final p in paths) {
+          if (p is String && p.startsWith('http')) allUrls.add(p);
+        }
+      }
+      final single = n['imagePath'];
+      if (single is String && single.startsWith('http')) allUrls.add(single);
+    }
+
+    int done = 0;
+    final total = allUrls.length;
+
+    for (final url in allUrls) {
+      try {
+        final ref = FirebaseStorage.instance.refFromURL(url);
+        final filename = ref.name;
+        final localPath = '${dir.path}/$filename';
+        final localFile = File(localPath);
+
+        if (!await localFile.exists()) {
+          await ref.writeToFile(localFile);
+        }
+        urlToLocal[url] = localPath;
+
+        done++;
+        _imageProgress = 'Görsel $done/$total indiriliyor...';
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Image download error for $url: $e');
+      }
+    }
+    _imageProgress = '';
+    notifyListeners();
+    return urlToLocal;
+  }
+
   /// Helper method to recursively convert any Hive object, map, or list into a 100% Firestore-safe primitive data structure
   dynamic _sanitizeKeys(dynamic input) {
     if (input is Map) {
@@ -269,9 +386,39 @@ class SyncProvider extends ChangeNotifier {
       for (final key in settingsBox.keys) {
         settings[key.toString()] = settingsBox.get(key);
       }
-
       currentStep = "2. JSON Paketine Dönüştürülüyor";
-      // 2. Build JSON payload
+      // 2. Build raw photo notes list (with local paths first)
+      final rawPhotoNotes = photoNotesData.map((item) {
+        final val = item['value'];
+        if (val is Map) return Map<String, dynamic>.from(val);
+        return <String, dynamic>{};
+      }).where((m) => m.isNotEmpty).toList();
+
+      // 2b. Upload images to Firebase Storage and replace local paths with URLs
+      currentStep = "2b. Görseller Firebase Storage'a Yükleniyor";
+      final pathToUrl = await _uploadImagesToStorage(user, rawPhotoNotes);
+
+      // Replace local paths with storage URLs in photoNotesData
+      final uploadedPhotoNotesData = photoNotesData.map((item) {
+        final val = item['value'];
+        if (val is! Map) return item;
+        final updated = Map<String, dynamic>.from(val);
+        // Replace imagePath
+        if (updated['imagePath'] is String) {
+          final url = pathToUrl[updated['imagePath']];
+          if (url != null) updated['imagePath'] = url;
+        }
+        // Replace imagePaths list
+        if (updated['imagePaths'] is List) {
+          updated['imagePaths'] = (updated['imagePaths'] as List).map((p) {
+            if (p is String) return pathToUrl[p] ?? p;
+            return p;
+          }).toList();
+        }
+        return {'key': item['key'], 'value': updated};
+      }).toList();
+
+      // 2. Build JSON payload (with storage URLs instead of local paths)
       final rawPayload = {
         'books': books,
         'pages': pages,
@@ -281,7 +428,7 @@ class SyncProvider extends ChangeNotifier {
         'habits': habits,
         'planner_tasks': plannerTasks,
         'plans': plans,
-        'photo_notes': photoNotesData,
+        'photo_notes': uploadedPhotoNotesData,
         'settings': settings,
         'lastBackupTime': DateTime.now().toIso8601String(),
         'deviceInfo': 'Android App',
@@ -308,6 +455,7 @@ class SyncProvider extends ChangeNotifier {
       } catch (tokenErr) {
         debugPrint('Token refresh warning: $tokenErr');
       }
+
 
       currentStep = "4. Ana Doküman Oluşturuluyor (Boyut: ${jsonString.length} kr)";
       // 4. Store each 400k chunk as an individual document inside users/{email}/backups/latest/chunks/chunk_X
@@ -389,6 +537,7 @@ class SyncProvider extends ChangeNotifier {
     _syncError = null;
     notifyListeners();
 
+    String currentStep = "1. Buluttan Veri Çekiliyor";
     try {
       final String docId = _firestoreDocId(user);
       // 1. Fetch backup document from Cloud
@@ -535,21 +684,51 @@ class SyncProvider extends ChangeNotifier {
         }
       }
 
-      // 10. Photo Notes & Flashcards
+      // 10. Photo Notes & Flashcards (Download images from Storage to local storage)
       final photoNotesBox = Hive.isBoxOpen('photo_notes')
           ? Hive.box('photo_notes')
           : await Hive.openBox('photo_notes');
       await photoNotesBox.clear();
       final photoNotesData = data['photo_notes'] as List<dynamic>? ?? [];
+
+      // Collect raw photo note maps for image downloading
+      final List<Map<String, dynamic>> rawNotesList = [];
+      for (final item in photoNotesData) {
+        if (item is Map && item.containsKey('value') && item['value'] is Map) {
+          rawNotesList.add(Map<String, dynamic>.from(item['value'] as Map));
+        }
+      }
+
+      currentStep = "10. Görseller Firebase Storage'dan İndiriliyor";
+      final urlToLocal = await _downloadImagesFromStorage(user, rawNotesList);
+
       for (final item in photoNotesData) {
         if (item is Map && item.containsKey('key') && item.containsKey('value')) {
           final key = item['key'];
           final val = item['value'];
           if (key != null && val != null) {
-            await photoNotesBox.put(key, val);
+            if (val is Map) {
+              final updatedVal = Map<String, dynamic>.from(val);
+              // Replace imagePath URL with local path
+              if (updatedVal['imagePath'] is String) {
+                final local = urlToLocal[updatedVal['imagePath']];
+                if (local != null) updatedVal['imagePath'] = local;
+              }
+              // Replace imagePaths list URLs with local paths
+              if (updatedVal['imagePaths'] is List) {
+                updatedVal['imagePaths'] = (updatedVal['imagePaths'] as List).map((p) {
+                  if (p is String) return urlToLocal[p] ?? p;
+                  return p;
+                }).toList();
+              }
+              await photoNotesBox.put(key, updatedVal);
+            } else {
+              await photoNotesBox.put(key, val);
+            }
           }
         }
       }
+
 
       // 11. Settings
       final settingsBox = Hive.box('settings');
@@ -571,7 +750,7 @@ class SyncProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _isSyncing = false;
-      _syncError = "Geri yükleme hatası: $e";
+      _syncError = "[$currentStep]\nGeri yükleme hatası: $e";
       notifyListeners();
       return false;
     }
