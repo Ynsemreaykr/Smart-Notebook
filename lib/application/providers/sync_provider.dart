@@ -97,36 +97,25 @@ class SyncProvider extends ChangeNotifier {
   }
 
   /// Helper method to recursively convert any Hive object, map, or list into a 100% Firestore-safe primitive data structure
-  dynamic _sanitizeForFirestore(dynamic item) {
-    if (item == null) return null;
-    if (item is num || item is String || item is bool) return item;
-    if (item is DateTime) return item.toIso8601String();
-
-    if (item is List) {
-      return item.map((e) => _sanitizeForFirestore(e)).toList();
-    }
-
-    if (item is Map) {
+  dynamic _sanitizeKeys(dynamic input) {
+    if (input is Map) {
       final Map<String, dynamic> result = {};
-      item.forEach((key, value) {
-        String keyString = key.toString().replaceAll('.', '_');
-        if (keyString.isEmpty) keyString = 'empty_key';
-        result[keyString] = _sanitizeForFirestore(value);
+      input.forEach((k, v) {
+        String cleanKey = k.toString()
+            .replaceAll('.', '_')
+            .replaceAll('/', '_')
+            .replaceAll('[', '_')
+            .replaceAll(']', '_')
+            .replaceAll('~', '_')
+            .replaceAll('*', '_');
+        if (cleanKey.isEmpty) cleanKey = 'empty_key';
+        result[cleanKey] = _sanitizeKeys(v);
       });
       return result;
+    } else if (input is List) {
+      return input.map((e) => _sanitizeKeys(e)).toList();
     }
-
-    try {
-      final dynamic jsonVal = (item as dynamic).toJson();
-      return _sanitizeForFirestore(jsonVal);
-    } catch (_) {}
-
-    try {
-      final dynamic mapVal = (item as dynamic).toMap();
-      return _sanitizeForFirestore(mapVal);
-    } catch (_) {}
-
-    return item.toString();
+    return input;
   }
 
   /// Backup local data to Cloud Firestore under users/{uid}/backups/latest
@@ -193,16 +182,28 @@ class SyncProvider extends ChangeNotifier {
         'deviceInfo': 'Android App',
       };
 
-      // 3. Sanitize data recursively to satisfy Firestore field/argument rules
-      final sanitizedData = _sanitizeForFirestore(rawPayload) as Map<String, dynamic>;
+      // 3. Serialize to pure JSON string with custom encoder fallback
+      final jsonString = jsonEncode(rawPayload, toEncodable: (nonEncodable) {
+        if (nonEncodable is DateTime) return nonEncodable.toIso8601String();
+        try {
+          return (nonEncodable as dynamic).toJson();
+        } catch (_) {}
+        try {
+          return (nonEncodable as dynamic).toMap();
+        } catch (_) {}
+        return nonEncodable.toString();
+      });
 
-      // 4. Write data to Firestore
+      // 4. Decode JSON back to pure Map<String, dynamic> and sanitize keys for Firestore
+      final Map<String, dynamic> firestoreSafeData = _sanitizeKeys(jsonDecode(jsonString)) as Map<String, dynamic>;
+
+      // 5. Write data to Firestore
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('backups')
           .doc('latest')
-          .set(sanitizedData);
+          .set(firestoreSafeData);
 
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
