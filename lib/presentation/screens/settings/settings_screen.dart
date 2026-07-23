@@ -107,6 +107,268 @@ class SettingsScreen extends StatelessWidget {
     return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _showEmailAuthDialog(BuildContext context, SyncProvider syncProvider) async {
+    bool isLogin = true;
+    final emailCtrl = TextEditingController();
+    final passCtrl = TextEditingController();
+    String? errorMsg;
+    bool isLoading = false;
+    bool obscurePass = true;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return Dialog(
+              backgroundColor: AppColors.background,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: Colors.orangeAccent.withOpacity(0.4), width: 1),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Başlık
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.orangeAccent.withOpacity(0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.email_outlined, color: Colors.orangeAccent, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          isLogin ? 'E-posta ile Giriş' : 'Yeni Hesap Oluştur',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Sekme seçici
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() { isLogin = true; errorMsg = null; }),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                decoration: BoxDecoration(
+                                  color: isLogin ? Colors.orangeAccent.withOpacity(0.2) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: isLogin ? Border.all(color: Colors.orangeAccent.withOpacity(0.6)) : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Giriş Yap',
+                                    style: TextStyle(
+                                      color: isLogin ? Colors.orangeAccent : Colors.grey,
+                                      fontWeight: isLogin ? FontWeight.bold : FontWeight.normal,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() { isLogin = false; errorMsg = null; }),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                decoration: BoxDecoration(
+                                  color: !isLogin ? Colors.orangeAccent.withOpacity(0.2) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: !isLogin ? Border.all(color: Colors.orangeAccent.withOpacity(0.6)) : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'Kayıt Ol',
+                                    style: TextStyle(
+                                      color: !isLogin ? Colors.orangeAccent : Colors.grey,
+                                      fontWeight: !isLogin ? FontWeight.bold : FontWeight.normal,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+
+                    // E-posta alanı
+                    TextField(
+                      controller: emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'E-posta',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(Icons.email_outlined, color: Colors.orangeAccent, size: 18),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Colors.orangeAccent),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Şifre alanı
+                    TextField(
+                      controller: passCtrl,
+                      obscureText: obscurePass,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Şifre',
+                        labelStyle: const TextStyle(color: Colors.grey),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Colors.orangeAccent, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscurePass ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: Colors.grey,
+                            size: 18,
+                          ),
+                          onPressed: () => setState(() => obscurePass = !obscurePass),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: Colors.white.withOpacity(0.15)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Colors.orangeAccent),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
+
+                    // Hata mesajı
+                    if (errorMsg != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          errorMsg!,
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 16),
+
+                    // Giriş/Kayıt butonu
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orangeAccent.withOpacity(0.85),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      onPressed: isLoading
+                          ? null
+                          : () async {
+                              setState(() { isLoading = true; errorMsg = null; });
+                              String? err;
+                              if (isLogin) {
+                                err = await syncProvider.signInWithEmail(emailCtrl.text, passCtrl.text);
+                              } else {
+                                err = await syncProvider.registerWithEmail(emailCtrl.text, passCtrl.text);
+                              }
+                              setState(() { isLoading = false; errorMsg = err; });
+                              if (err == null && ctx.mounted) {
+                                Navigator.of(dialogCtx).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(isLogin ? 'Başarıyla giriş yapıldı!' : 'Hesabınız oluşturuldu!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            },
+                      child: isLoading
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text(isLogin ? 'Giriş Yap' : 'Kayıt Ol',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    ),
+
+                    // Şifremi unuttum
+                    if (isLogin) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: isLoading
+                            ? null
+                            : () async {
+                                if (emailCtrl.text.trim().isEmpty) {
+                                  setState(() => errorMsg = 'Lütfen önce e-posta adresinizi girin.');
+                                  return;
+                                }
+                                final err = await syncProvider.resetPassword(emailCtrl.text);
+                                setState(() => errorMsg = err);
+                                if (err == null && ctx.mounted) {
+                                  setState(() => errorMsg = null);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Şifre sıfırlama e-postası gönderildi!'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              },
+                        child: const Text(
+                          'Şifremi Unuttum',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
@@ -174,6 +436,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ] else if (syncProvider.currentUser == null) ...[
+              // Google Sign In card
               AppCard(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 margin: EdgeInsets.zero,
@@ -242,7 +505,7 @@ class SettingsScreen extends StatelessWidget {
                               ),
                               SizedBox(height: 2),
                               AppText(
-                                'Verilerinizi buluta yedekleyin ve senkronize edin.',
+                                'Telefon ve Google Play Services gerektiren cihazlar için.',
                                 styleType: AppTextStyleType.caption,
                                 color: Colors.grey,
                               ),
@@ -250,6 +513,59 @@ class SettingsScreen extends StatelessWidget {
                           ),
                         ),
                         Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.glow),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              // Email/Password Sign In card
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                margin: EdgeInsets.zero,
+                borderColor: Colors.orangeAccent.withOpacity(0.3),
+                shadowColor: Colors.orangeAccent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: syncProvider.isSyncing
+                      ? null
+                      : () => _showEmailAuthDialog(context, syncProvider),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.orangeAccent.withOpacity(0.12),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.orangeAccent.withOpacity(0.4)),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.email_outlined, color: Colors.orangeAccent, size: 20),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              AppText(
+                                'E-posta ile Giriş Yap',
+                                styleType: AppTextStyleType.bodyMedium,
+                                styleOverride: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 2),
+                              AppText(
+                                'Huawei ve Google Play Services olmayan cihazlar için.',
+                                styleType: AppTextStyleType.caption,
+                                color: Colors.grey,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.orangeAccent),
                       ],
                     ),
                   ),

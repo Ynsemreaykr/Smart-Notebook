@@ -81,6 +81,92 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
+  /// Sign in with Email + Password
+  Future<String?> signInWithEmail(String email, String password) async {
+    if (!_isFirebaseAvailable) return "Firebase yapılandırması eksik.";
+    _isSyncing = true;
+    _syncError = null;
+    notifyListeners();
+    try {
+      await _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+      _isSyncing = false;
+      notifyListeners();
+      return null; // null = success
+    } on FirebaseAuthException catch (e) {
+      _isSyncing = false;
+      final msg = _authErrorMessage(e.code);
+      _syncError = msg;
+      notifyListeners();
+      return msg;
+    } catch (e) {
+      _isSyncing = false;
+      _syncError = e.toString();
+      notifyListeners();
+      return e.toString();
+    }
+  }
+
+  /// Register a new account with Email + Password
+  Future<String?> registerWithEmail(String email, String password) async {
+    if (!_isFirebaseAvailable) return "Firebase yapılandırması eksik.";
+    _isSyncing = true;
+    _syncError = null;
+    notifyListeners();
+    try {
+      await _auth.createUserWithEmailAndPassword(email: email.trim(), password: password);
+      _isSyncing = false;
+      notifyListeners();
+      return null; // null = success
+    } on FirebaseAuthException catch (e) {
+      _isSyncing = false;
+      final msg = _authErrorMessage(e.code);
+      _syncError = msg;
+      notifyListeners();
+      return msg;
+    } catch (e) {
+      _isSyncing = false;
+      _syncError = e.toString();
+      notifyListeners();
+      return e.toString();
+    }
+  }
+
+  /// Send password reset email
+  Future<String?> resetPassword(String email) async {
+    if (!_isFirebaseAvailable) return "Firebase yapılandırması eksik.";
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+      return null; // null = success
+    } on FirebaseAuthException catch (e) {
+      return _authErrorMessage(e.code);
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  String _authErrorMessage(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'Bu e-posta ile kayıtlı hesap bulunamadı.';
+      case 'wrong-password':
+        return 'Şifre hatalı. Lütfen tekrar deneyin.';
+      case 'email-already-in-use':
+        return 'Bu e-posta adresi zaten kullanımda.';
+      case 'invalid-email':
+        return 'Geçersiz e-posta adresi.';
+      case 'weak-password':
+        return 'Şifre çok kısa. En az 6 karakter giriniz.';
+      case 'too-many-requests':
+        return 'Çok fazla deneme yapıldı. Lütfen biraz bekleyin.';
+      case 'network-request-failed':
+        return 'İnternet bağlantısı yok. Lütfen kontrol edin.';
+      case 'invalid-credential':
+        return 'E-posta veya şifre hatalı.';
+      default:
+        return 'Giriş hatası: $code';
+    }
+  }
+
   /// Sign out
   Future<void> signOut() async {
     if (!_isFirebaseAvailable) return;
