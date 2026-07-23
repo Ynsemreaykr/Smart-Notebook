@@ -195,16 +195,17 @@ class SyncProvider extends ChangeNotifier {
         return nonEncodable.toString();
       });
 
-      // 4. Decode JSON back to pure Map<String, dynamic> and sanitize keys for Firestore
-      final Map<String, dynamic> firestoreSafeData = _sanitizeKeys(jsonDecode(jsonString)) as Map<String, dynamic>;
-
-      // 5. Write data to Firestore
+      // 4. Write data to Firestore as a single clean json_data payload
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('backups')
           .doc('latest')
-          .set(firestoreSafeData);
+          .set({
+        'json_data': jsonString,
+        'lastBackupTime': DateTime.now().toIso8601String(),
+        'deviceInfo': 'Android App',
+      });
 
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
@@ -249,7 +250,13 @@ class SyncProvider extends ChangeNotifier {
         return false;
       }
 
-      final data = doc.data()!;
+      final docMap = doc.data()!;
+      final Map<String, dynamic> data;
+      if (docMap.containsKey('json_data') && docMap['json_data'] is String) {
+        data = jsonDecode(docMap['json_data'] as String) as Map<String, dynamic>;
+      } else {
+        data = docMap;
+      }
 
       // 2. Books
       final booksBox = DatabaseService.getBooksBox();
