@@ -343,10 +343,26 @@ class PhotoNoteProvider extends ChangeNotifier {
       debugPrint('Error deleting image file: $e');
     }
 
-    // 2. Delete database entry
+    // 2. Delete database entry for note
     await box.delete(id);
 
-    // 3. Reset selected category if it no longer exists
+    // 3. Delete any linked flashcards for this note
+    final cardKeysToDelete = [];
+    for (var key in box.keys) {
+      if (key == 'categories_list' || key == 'notes_order') continue;
+      final data = box.get(key);
+      if (data is Map && data.containsKey('frontText')) {
+        final card = Flashcard.fromMap(data);
+        if (card.noteId == id) {
+          cardKeysToDelete.add(key);
+        }
+      }
+    }
+    for (var key in cardKeysToDelete) {
+      await box.delete(key);
+    }
+
+    // 4. Reset selected category if it no longer exists
     final remainingNotes = _photoNotes.where((n) => n.id != id).toList();
     final categoriesSet = remainingNotes.map((n) => n.category.trim()).toSet();
     if (_selectedCategory != 'Tümü' && !categoriesSet.contains(_selectedCategory)) {
@@ -470,20 +486,33 @@ class PhotoNoteProvider extends ChangeNotifier {
     final box = Hive.box(_boxName);
     await box.put('categories_list', _customCategories);
 
-    // Update all notes with old category or sub-categories
+    // Update all notes and flashcards with old category or sub-categories
     for (var key in box.keys) {
       if (key == 'categories_list' || key == 'notes_order') continue;
       final data = box.get(key);
       if (data is Map) {
-        final note = PhotoNote.fromMap(data);
-        final cat = note.category.trim();
-        if (cat == oldTrimmed) {
-          final updatedNote = note.copyWith(category: newTrimmed);
-          await box.put(key, updatedNote.toMap());
-        } else if (cat.startsWith(oldPrefix)) {
-          final rest = cat.substring(oldPrefix.length);
-          final updatedNote = note.copyWith(category: '$newTrimmed / $rest');
-          await box.put(key, updatedNote.toMap());
+        if (data.containsKey('frontText')) {
+          final card = Flashcard.fromMap(data);
+          final cat = card.category.trim();
+          if (cat == oldTrimmed) {
+            final updatedCard = card.copyWith(category: newTrimmed);
+            await box.put(key, updatedCard.toMap());
+          } else if (cat.startsWith(oldPrefix)) {
+            final rest = cat.substring(oldPrefix.length);
+            final updatedCard = card.copyWith(category: '$newTrimmed / $rest');
+            await box.put(key, updatedCard.toMap());
+          }
+        } else if (data.containsKey('imagePath')) {
+          final note = PhotoNote.fromMap(data);
+          final cat = note.category.trim();
+          if (cat == oldTrimmed) {
+            final updatedNote = note.copyWith(category: newTrimmed);
+            await box.put(key, updatedNote.toMap());
+          } else if (cat.startsWith(oldPrefix)) {
+            final rest = cat.substring(oldPrefix.length);
+            final updatedNote = note.copyWith(category: '$newTrimmed / $rest');
+            await box.put(key, updatedNote.toMap());
+          }
         }
       }
     }
@@ -491,7 +520,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     await loadPhotoNotes();
   }
 
-  /// Delete a category / folder and all sub-units and notes inside it
+  /// Delete a category / folder and all sub-units, notes, and flashcards inside it
   Future<void> deleteCategory(String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
@@ -502,25 +531,32 @@ class PhotoNoteProvider extends ChangeNotifier {
     final box = Hive.box(_boxName);
     await box.put('categories_list', _customCategories);
 
-    // Delete all notes belonging to this category or its sub-categories
+    // Delete all notes and flashcards belonging to this category or its sub-categories
     final keysToDelete = [];
     for (var key in box.keys) {
       if (key == 'categories_list' || key == 'notes_order') continue;
       final data = box.get(key);
       if (data is Map) {
-        final note = PhotoNote.fromMap(data);
-        final cat = note.category.trim();
-        if (cat == trimmed || cat.startsWith(prefix)) {
-          // Delete file
-          try {
-            final file = File(note.imagePath);
-            if (await file.exists()) {
-              await file.delete();
-            }
-          } catch (e) {
-            debugPrint('Error deleting note file: $e');
+        if (data.containsKey('frontText')) {
+          final card = Flashcard.fromMap(data);
+          final cat = card.category.trim();
+          if (cat == trimmed || cat.startsWith(prefix)) {
+            keysToDelete.add(key);
           }
-          keysToDelete.add(key);
+        } else if (data.containsKey('imagePath')) {
+          final note = PhotoNote.fromMap(data);
+          final cat = note.category.trim();
+          if (cat == trimmed || cat.startsWith(prefix)) {
+            try {
+              final file = File(note.imagePath);
+              if (await file.exists()) {
+                await file.delete();
+              }
+            } catch (e) {
+              debugPrint('Error deleting note file: $e');
+            }
+            keysToDelete.add(key);
+          }
         }
       }
     }
@@ -532,10 +568,12 @@ class PhotoNoteProvider extends ChangeNotifier {
     await loadPhotoNotes();
   }
 
-  /// Get list of flashcards for a specific category path
+  /// Get list of flashcards for a specific category path (only category-wide flashcards, excluding note-specific ones)
   List<Flashcard> getFlashcardsForCategory(String categoryPath) {
     final trimmed = categoryPath.trim();
-    return _flashcards.where((f) => f.category.trim() == trimmed).toList();
+    return _flashcards
+        .where((f) => f.category.trim() == trimmed && (f.noteId == null || f.noteId!.trim().isEmpty))
+        .toList();
   }
 
   /// Get list of flashcards linked specifically to a PhotoNote
