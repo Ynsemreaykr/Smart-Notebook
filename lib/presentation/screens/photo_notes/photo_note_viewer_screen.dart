@@ -40,6 +40,28 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   int _currentPage = 0;
   late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
+  Timer? _autoScrollTimer;
+
+  void _startAutoScroll(double step, ScrollController controller) {
+    if (_autoScrollTimer?.isActive ?? false) return;
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 25), (_) {
+      if (!controller.hasClients) {
+        _stopAutoScroll();
+        return;
+      }
+      final newOffset = (controller.offset + step).clamp(
+        0.0,
+        controller.position.maxScrollExtent,
+      );
+      controller.jumpTo(newOffset);
+    });
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
+
   TapDownDetails? _doubleTapDetails;
 
   @override
@@ -52,6 +74,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   @override
   void dispose() {
+    _autoScrollTimer?.cancel();
     WakelockHelper.disable();
     _transformationController.removeListener(_onTransformationChanged);
     _pageController.dispose();
@@ -251,6 +274,24 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   }
 
   void _openFlashcardsSheet(BuildContext context, PhotoNote note) {
+    final sheetScrollController = ScrollController();
+    void handleSheetDragUpdate(DragUpdateDetails details) {
+      final dy = details.globalPosition.dy;
+      final screenHeight = MediaQuery.of(context).size.height;
+      final sheetTop = screenHeight * 0.20 + 80;
+      final sheetBottom = screenHeight - 60;
+
+      if (dy < sheetTop) {
+        final ratio = ((sheetTop - dy) / 80).clamp(0.1, 1.0);
+        _startAutoScroll(-16.0 * ratio, sheetScrollController);
+      } else if (dy > sheetBottom) {
+        final ratio = ((dy - sheetBottom) / 60).clamp(0.1, 1.0);
+        _startAutoScroll(16.0 * ratio, sheetScrollController);
+      } else {
+        _stopAutoScroll();
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -333,6 +374,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           )
                         : ListView(
+                            controller: sheetScrollController,
                             physics: const BouncingScrollPhysics(),
                             children: [
                               ...groupedMap.entries.expand((entry) {
@@ -454,6 +496,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       final card = cards[index];
                                       return LongPressDraggable<Flashcard>(
                                         data: card,
+                                        onDragUpdate: handleSheetDragUpdate,
+                                        onDragEnd: (_) => _stopAutoScroll(),
+                                        onDraggableCanceled: (_, __) => _stopAutoScroll(),
                                         feedback: Material(
                                           elevation: 8,
                                           color: Colors.transparent,

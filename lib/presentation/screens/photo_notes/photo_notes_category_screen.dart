@@ -29,6 +29,58 @@ class PhotoNotesCategoryScreen extends StatefulWidget {
 
 class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
   final ImagePicker _picker = ImagePicker();
+  late ScrollController _categoryScrollController;
+  Timer? _autoScrollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryScrollController = ScrollController();
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _categoryScrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    final dy = details.globalPosition.dy;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final topEdge = 160.0;
+    final bottomEdge = screenHeight - 160.0;
+
+    if (dy < topEdge) {
+      final ratio = ((topEdge - dy) / topEdge).clamp(0.1, 1.0);
+      _startAutoScroll(-16.0 * ratio, _categoryScrollController);
+    } else if (dy > bottomEdge) {
+      final ratio = ((dy - bottomEdge) / 160.0).clamp(0.1, 1.0);
+      _startAutoScroll(16.0 * ratio, _categoryScrollController);
+    } else {
+      _stopAutoScroll();
+    }
+  }
+
+  void _startAutoScroll(double step, ScrollController controller) {
+    if (_autoScrollTimer?.isActive ?? false) return;
+    _autoScrollTimer = Timer.periodic(const Duration(milliseconds: 25), (_) {
+      if (!controller.hasClients) {
+        _stopAutoScroll();
+        return;
+      }
+      final newOffset = (controller.offset + step).clamp(
+        0.0,
+        controller.position.maxScrollExtent,
+      );
+      controller.jumpTo(newOffset);
+    });
+  }
+
+  void _stopAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
 
   final List<String> _presetColors = [
     '#3B82F6', // Blue
@@ -999,6 +1051,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             }
 
             return CustomScrollView(
+              controller: _categoryScrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
                 // 1. Sub-Categories / Units Section (If any exist)
@@ -1404,6 +1457,9 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                 delay: Duration(milliseconds: 40 * index),
                                 child: LongPressDraggable<Flashcard>(
                                   data: card,
+                                  onDragUpdate: _handleDragUpdate,
+                                  onDragEnd: (_) => _stopAutoScroll(),
+                                  onDraggableCanceled: (_, __) => _stopAutoScroll(),
                                   feedback: Material(
                                     elevation: 8,
                                     color: Colors.transparent,
