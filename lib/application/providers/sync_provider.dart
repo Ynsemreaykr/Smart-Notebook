@@ -96,6 +96,39 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
+  /// Helper method to recursively convert any Hive object, map, or list into a 100% Firestore-safe primitive data structure
+  dynamic _sanitizeForFirestore(dynamic item) {
+    if (item == null) return null;
+    if (item is num || item is String || item is bool) return item;
+    if (item is DateTime) return item.toIso8601String();
+
+    if (item is List) {
+      return item.map((e) => _sanitizeForFirestore(e)).toList();
+    }
+
+    if (item is Map) {
+      final Map<String, dynamic> result = {};
+      item.forEach((key, value) {
+        String keyString = key.toString().replaceAll('.', '_');
+        if (keyString.isEmpty) keyString = 'empty_key';
+        result[keyString] = _sanitizeForFirestore(value);
+      });
+      return result;
+    }
+
+    try {
+      final dynamic jsonVal = (item as dynamic).toJson();
+      return _sanitizeForFirestore(jsonVal);
+    } catch (_) {}
+
+    try {
+      final dynamic mapVal = (item as dynamic).toMap();
+      return _sanitizeForFirestore(mapVal);
+    } catch (_) {}
+
+    return item.toString();
+  }
+
   /// Backup local data to Cloud Firestore under users/{uid}/backups/latest
   Future<bool> backupToCloud() async {
     final user = currentUser;
@@ -115,18 +148,28 @@ class SyncProvider extends ChangeNotifier {
       final pages = DatabaseService.getPagesBox().values.toList();
       final events = DatabaseService.getEventsBox().values.toList();
       final notes = DatabaseService.getNotesBox().values.toList();
-      
+
       final voiceNotesBox = Hive.box<Note>('voice_notes');
       final voiceNotes = voiceNotesBox.values.toList();
-      
+
       final habitsBox = DatabaseService.getHabitsBox();
       final habits = habitsBox.values.toList();
-      
+
       final plannerTasksBox = Hive.box('planner_tasks');
       final plannerTasks = plannerTasksBox.values.toList();
-      
+
       final plansBox = Hive.box('plans');
       final plans = plansBox.values.toList();
+
+      final photoNotesBox = Hive.isBoxOpen('photo_notes')
+          ? Hive.box('photo_notes')
+          : await Hive.openBox('photo_notes');
+      final photoNotesData = photoNotesBox.keys.map((k) {
+        return {
+          'key': k.toString(),
+          'value': photoNotesBox.get(k),
+        };
+      }).toList();
 
       final settingsBox = Hive.box('settings');
       final settings = <String, dynamic>{};
@@ -135,39 +178,31 @@ class SyncProvider extends ChangeNotifier {
       }
 
       // 2. Build JSON payload
-      final backupData = {
-        'books': books.map((e) => e.toJson()).toList(),
-        'pages': pages.map((e) => e.toJson()).toList(),
-        'events': events.map((e) => e.toJson()).toList(),
-        'notes': notes.map((e) => e.toJson()).toList(),
-        'voice_notes': voiceNotes.map((e) => e.toJson()).toList(),
-        'habits': habits.map((e) {
-          if (e is Habit) return e.toJson();
-          if (e is Map) return Map<String, dynamic>.from(e);
-          return e;
-        }).toList(),
-        'planner_tasks': plannerTasks.map((e) {
-          if (e is PlannerTask) return e.toJson();
-          if (e is Map) return Map<String, dynamic>.from(e);
-          return e;
-        }).toList(),
-        'plans': plans.map((e) {
-          if (e is Plan) return e.toJson();
-          if (e is Map) return Map<String, dynamic>.from(e);
-          return e;
-        }).toList(),
+      final rawPayload = {
+        'books': books,
+        'pages': pages,
+        'events': events,
+        'notes': notes,
+        'voice_notes': voiceNotes,
+        'habits': habits,
+        'planner_tasks': plannerTasks,
+        'plans': plans,
+        'photo_notes': photoNotesData,
         'settings': settings,
         'lastBackupTime': DateTime.now().toIso8601String(),
         'deviceInfo': 'Android App',
       };
 
-      // 3. Write data to Firestore
+      // 3. Sanitize data recursively to satisfy Firestore field/argument rules
+      final sanitizedData = _sanitizeForFirestore(rawPayload) as Map<String, dynamic>;
+
+      // 4. Write data to Firestore
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('backups')
           .doc('latest')
-          .set(backupData);
+          .set(sanitizedData);
 
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
@@ -214,101 +249,121 @@ class SyncProvider extends ChangeNotifier {
 
       final data = doc.data()!;
 
-      // 2. Clear current Hive boxes and populate them
-      
-      // Books
+      // 2. Books
       final booksBox = DatabaseService.getBooksBox();
       await booksBox.clear();
       final booksData = data['books'] as List<dynamic>? ?? [];
       for (final b in booksData) {
         if (b is Map) {
-          final book = Book.fromJson(b);
+          final book = Book.fromJson(Map<String, dynamic>.from(b));
           await booksBox.put(book.id, book);
         }
       }
 
-      // Pages
+      // 3. Pages
       final pagesBox = DatabaseService.getPagesBox();
       await pagesBox.clear();
       final pagesData = data['pages'] as List<dynamic>? ?? [];
       for (final p in pagesData) {
         if (p is Map) {
-          final page = NotePage.fromJson(p);
+          final page = NotePage.fromJson(Map<String, dynamic>.from(p));
           await pagesBox.put(page.id, page);
         }
       }
 
-      // Events
+      // 4. Events
       final eventsBox = DatabaseService.getEventsBox();
       await eventsBox.clear();
       final eventsData = data['events'] as List<dynamic>? ?? [];
       for (final ev in eventsData) {
         if (ev is Map) {
-          final event = CalendarEvent.fromJson(ev);
+          final event = CalendarEvent.fromJson(Map<String, dynamic>.from(ev));
           await eventsBox.put(event.id, event);
         }
       }
 
-      // Notes
+      // 5. Notes
       final notesBox = DatabaseService.getNotesBox();
       await notesBox.clear();
       final notesData = data['notes'] as List<dynamic>? ?? [];
       for (final n in notesData) {
         if (n is Map) {
-          final note = Note.fromJson(n);
+          final note = Note.fromJson(Map<String, dynamic>.from(n));
           await notesBox.put(note.id, note);
         }
       }
 
-      // Voice Notes
+      // 6. Voice Notes
       final voiceNotesBox = Hive.box<Note>('voice_notes');
       await voiceNotesBox.clear();
       final voiceNotesData = data['voice_notes'] as List<dynamic>? ?? [];
       for (final vn in voiceNotesData) {
         if (vn is Map) {
-          final note = Note.fromJson(vn);
+          final note = Note.fromJson(Map<String, dynamic>.from(vn));
           await voiceNotesBox.put(note.id, note);
         }
       }
 
-      // Habits
+      // 7. Habits
       final habitsBox = DatabaseService.getHabitsBox();
       await habitsBox.clear();
       final habitsData = data['habits'] as List<dynamic>? ?? [];
       for (final h in habitsData) {
         if (h is Map) {
-          final habit = Habit.fromJson(h);
-          await habitsBox.put(habit.id, habit.toJson());
+          final map = Map<String, dynamic>.from(h);
+          if (map.containsKey('id')) {
+            await habitsBox.put(map['id'], map);
+          }
         }
       }
 
-      // Planner Tasks
+      // 8. Planner Tasks
       final plannerTasksBox = Hive.box('planner_tasks');
       await plannerTasksBox.clear();
       final plannerTasksData = data['planner_tasks'] as List<dynamic>? ?? [];
       for (final pt in plannerTasksData) {
         if (pt is Map) {
-          final task = PlannerTask.fromJson(pt);
-          await plannerTasksBox.put(task.id, task.toJson());
+          final map = Map<String, dynamic>.from(pt);
+          if (map.containsKey('id')) {
+            await plannerTasksBox.put(map['id'], map);
+          }
         }
       }
 
-      // Plans
+      // 9. Plans
       final plansBox = Hive.box('plans');
       await plansBox.clear();
       final plansData = data['plans'] as List<dynamic>? ?? [];
       for (final pl in plansData) {
         if (pl is Map) {
-          final plan = Plan.fromJson(pl);
-          await plansBox.put(plan.id, plan.toJson());
+          final map = Map<String, dynamic>.from(pl);
+          if (map.containsKey('id')) {
+            await plansBox.put(map['id'], map);
+          }
         }
       }
 
-      // Settings
+      // 10. Photo Notes & Flashcards
+      final photoNotesBox = Hive.isBoxOpen('photo_notes')
+          ? Hive.box('photo_notes')
+          : await Hive.openBox('photo_notes');
+      await photoNotesBox.clear();
+      final photoNotesData = data['photo_notes'] as List<dynamic>? ?? [];
+      for (final item in photoNotesData) {
+        if (item is Map && item.containsKey('key') && item.containsKey('value')) {
+          final key = item['key'];
+          final val = item['value'];
+          if (key != null && val != null) {
+            await photoNotesBox.put(key, val);
+          }
+        }
+      }
+
+      // 11. Settings
       final settingsBox = Hive.box('settings');
       final settingsData = data['settings'] as Map<dynamic, dynamic>? ?? {};
       for (final key in settingsData.keys) {
-        await settingsBox.put(key, settingsData[key]);
+        await settingsBox.put(key.toString(), settingsData[key]);
       }
 
       // Update backup local timestamp
