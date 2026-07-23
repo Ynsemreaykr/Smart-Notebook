@@ -207,32 +207,51 @@ class SyncProvider extends ChangeNotifier {
         debugPrint('Token refresh warning: $tokenErr');
       }
 
-      currentStep = "4. Firestore'a Gönderiliyor (Boyut: ${jsonString.length} kr)";
-      // 4. Chunk jsonString into safe 500k character blocks so Firestore 1MB limit per field is never hit
-      const int chunkSize = 500000;
+      currentStep = "4. Ana Doküman Oluşturuluyor (Boyut: ${jsonString.length} kr)";
+      // 4. Store each 400k chunk as an individual document inside users/{uid}/backups/latest/chunks/chunk_X to bypass 1MB single-document limit
+      const int chunkSize = 400000;
       final int totalChunks = (jsonString.length / chunkSize).ceil();
-      final Map<String, dynamic> firestoreMap = {
-        'lastBackupTime': DateTime.now().toIso8601String(),
-        'deviceInfo': 'Android App',
-        'chunkCount': totalChunks > 0 ? totalChunks : 1,
-      };
-
-      if (jsonString.isEmpty) {
-        firestoreMap['chunk_0'] = '{}';
-      } else {
-        for (int i = 0; i * chunkSize < jsonString.length; i++) {
-          int end = (i + 1) * chunkSize;
-          if (end > jsonString.length) end = jsonString.length;
-          firestoreMap['chunk_$i'] = jsonString.substring(i * chunkSize, end);
-        }
-      }
+      final String uid = user.uid.trim();
 
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
+          .doc(uid)
           .collection('backups')
           .doc('latest')
-          .set(firestoreMap);
+          .set({
+        'lastBackupTime': DateTime.now().toIso8601String(),
+        'deviceInfo': 'Android App',
+        'chunkCount': totalChunks > 0 ? totalChunks : 1,
+        'totalSize': jsonString.length,
+      });
+
+      if (jsonString.isEmpty) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .collection('backups')
+            .doc('latest')
+            .collection('chunks')
+            .doc('chunk_0')
+            .set({'data': '{}'});
+      } else {
+        for (int i = 0; i * chunkSize < jsonString.length; i++) {
+          currentStep = "5. Parça ${i + 1}/$totalChunks Sunucuya Yükleniyor";
+          int start = i * chunkSize;
+          int end = start + chunkSize;
+          if (end > jsonString.length) end = jsonString.length;
+          final chunkText = jsonString.substring(start, end);
+
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('backups')
+              .doc('latest')
+              .collection('chunks')
+              .doc('chunk_$i')
+              .set({'data': chunkText});
+        }
+      }
 
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
@@ -289,9 +308,29 @@ class SyncProvider extends ChangeNotifier {
       if (docMap.containsKey('chunkCount')) {
         final int count = (docMap['chunkCount'] as num).toInt();
         final StringBuffer sb = StringBuffer();
-        for (int i = 0; i < count; i++) {
-          sb.write(docMap['chunk_$i'] ?? '');
+
+        // Fetch chunk sub-documents
+        final chunksSnap = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('backups')
+            .doc('latest')
+            .collection('chunks')
+            .get();
+
+        final Map<String, String> chunkMap = {};
+        for (final cDoc in chunksSnap.docs) {
+          chunkMap[cDoc.id] = cDoc.data()['data'] as String? ?? '';
         }
+
+        for (int i = 0; i < count; i++) {
+          if (chunkMap.containsKey('chunk_$i')) {
+            sb.write(chunkMap['chunk_$i']);
+          } else if (docMap.containsKey('chunk_$i')) {
+            sb.write(docMap['chunk_$i']);
+          }
+        }
+
         data = jsonDecode(sb.toString()) as Map<String, dynamic>;
       } else if (docMap.containsKey('json_data') && docMap['json_data'] is String) {
         data = jsonDecode(docMap['json_data'] as String) as Map<String, dynamic>;
