@@ -449,16 +449,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         );
       },
     );
-  }
-
-  Color _parseColor(String hex) {
-    try {
-      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
-    } catch (_) {
-      return const Color(0xFF1E3A8A);
-    }
-  }
-
   void _showRenameHeadingDialogForNote(BuildContext context, PhotoNote note, String oldTitle) {
     final controller = TextEditingController(text: oldTitle);
     showDialog(
