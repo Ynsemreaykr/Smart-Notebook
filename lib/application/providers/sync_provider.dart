@@ -202,17 +202,31 @@ class SyncProvider extends ChangeNotifier {
         debugPrint('Token refresh warning: $tokenErr');
       }
 
-      // 4. Write data to Firestore as a single clean json_data payload
+      // 4. Chunk jsonString into safe 500k character blocks so Firestore 1MB limit per field is never hit
+      const int chunkSize = 500000;
+      final int totalChunks = (jsonString.length / chunkSize).ceil();
+      final Map<String, dynamic> firestoreMap = {
+        'lastBackupTime': DateTime.now().toIso8601String(),
+        'deviceInfo': 'Android App',
+        'chunkCount': totalChunks > 0 ? totalChunks : 1,
+      };
+
+      if (jsonString.isEmpty) {
+        firestoreMap['chunk_0'] = '{}';
+      } else {
+        for (int i = 0; i * chunkSize < jsonString.length; i++) {
+          int end = (i + 1) * chunkSize;
+          if (end > jsonString.length) end = jsonString.length;
+          firestoreMap['chunk_$i'] = jsonString.substring(i * chunkSize, end);
+        }
+      }
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('backups')
           .doc('latest')
-          .set({
-        'json_data': jsonString,
-        'lastBackupTime': DateTime.now().toIso8601String(),
-        'deviceInfo': 'Android App',
-      });
+          .set(firestoreMap);
 
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
@@ -260,7 +274,14 @@ class SyncProvider extends ChangeNotifier {
 
       final docMap = doc.data()!;
       final Map<String, dynamic> data;
-      if (docMap.containsKey('json_data') && docMap['json_data'] is String) {
+      if (docMap.containsKey('chunkCount')) {
+        final int count = (docMap['chunkCount'] as num).toInt();
+        final StringBuffer sb = StringBuffer();
+        for (int i = 0; i < count; i++) {
+          sb.write(docMap['chunk_$i'] ?? '');
+        }
+        data = jsonDecode(sb.toString()) as Map<String, dynamic>;
+      } else if (docMap.containsKey('json_data') && docMap['json_data'] is String) {
         data = jsonDecode(docMap['json_data'] as String) as Map<String, dynamic>;
       } else {
         data = docMap;
