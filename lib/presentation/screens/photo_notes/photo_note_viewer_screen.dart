@@ -449,6 +449,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         );
       },
     );
+  }
+
   void _showRenameHeadingDialogForNote(BuildContext context, PhotoNote note, String oldTitle) {
     final controller = TextEditingController(text: oldTitle);
     showDialog(
