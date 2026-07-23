@@ -195,6 +195,13 @@ class SyncProvider extends ChangeNotifier {
         return nonEncodable.toString();
       });
 
+      // Refresh user auth token to ensure active credentials for Firestore
+      try {
+        await user.getIdToken(true);
+      } catch (tokenErr) {
+        debugPrint('Token refresh warning: $tokenErr');
+      }
+
       // 4. Write data to Firestore as a single clean json_data payload
       await FirebaseFirestore.instance
           .collection('users')
@@ -213,7 +220,8 @@ class SyncProvider extends ChangeNotifier {
       _isSyncing = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Backup Error: $e\n$stack');
       _isSyncing = false;
       _syncError = "Yedekleme hatası: $e";
       notifyListeners();
