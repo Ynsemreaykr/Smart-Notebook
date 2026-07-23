@@ -73,8 +73,22 @@ class PhotoNoteProvider extends ChangeNotifier {
         }
       }
 
-      _flashcards = loadedFlashcards
+      // Sort flashcards by saved order if available
+      final savedFlashcardOrder = box.get('flashcards_order');
+      final Map<String, Flashcard> flashcardsMap = {for (var f in loadedFlashcards) f.id: f};
+      final List<Flashcard> sortedFlashcards = [];
+
+      if (savedFlashcardOrder is List) {
+        for (var id in savedFlashcardOrder) {
+          if (flashcardsMap.containsKey(id)) {
+            sortedFlashcards.add(flashcardsMap.remove(id)!);
+          }
+        }
+      }
+      final remainingFlashcards = flashcardsMap.values.toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      sortedFlashcards.addAll(remainingFlashcards);
+      _flashcards = sortedFlashcards;
 
       // Load custom categories
       final savedCats = box.get('categories_list');
@@ -425,23 +439,64 @@ class PhotoNoteProvider extends ChangeNotifier {
     return list;
   }
 
-  /// Get direct sub-categories (units) of a parent category path
+  /// Get direct sub-categories (units) of a parent category path preserving custom order
   List<String> getSubCategories(String parentPath) {
     final trimmedParent = parentPath.trim();
     final prefix = '$trimmedParent / ';
-    final set = <String>{};
+    final list = <String>[];
     for (var cat in _customCategories) {
       if (cat.startsWith(prefix)) {
         final rest = cat.substring(prefix.length);
         final subName = rest.split(' / ').first.trim();
-        if (subName.isNotEmpty) {
-          set.add(subName);
+        if (subName.isNotEmpty && !list.contains(subName)) {
+          list.add(subName);
         }
       }
     }
-    final list = set.toList()..sort();
     return list;
   }
+
+  /// Reorder direct sub-categories (units) under a parent category path
+  Future<void> reorderSubCategories(String parentPath, int oldIndex, int newIndex) async {
+    final subCats = getSubCategories(parentPath);
+    if (oldIndex < 0 || oldIndex >= subCats.length) return;
+    if (newIndex < 0 || newIndex >= subCats.length) return;
+    if (oldIndex == newIndex) return;
+
+    final moved = subCats.removeAt(oldIndex);
+    subCats.insert(newIndex, moved);
+
+    final prefix = '${parentPath.trim()} / ';
+    final Map<String, List<String>> subGroupMap = {};
+
+    for (var cat in _customCategories) {
+      if (cat.startsWith(prefix)) {
+        final rest = cat.substring(prefix.length);
+        final subName = rest.split(' / ').first.trim();
+        subGroupMap.putIfAbsent(subName, () => []).add(cat);
+      }
+    }
+
+    final updatedCategories = <String>[];
+    for (var cat in _customCategories) {
+      if (!cat.startsWith(prefix)) {
+        updatedCategories.add(cat);
+      }
+    }
+
+    for (var subName in subCats) {
+      final list = subGroupMap[subName];
+      if (list != null) {
+        updatedCategories.addAll(list);
+      }
+    }
+
+    _customCategories = updatedCategories;
+    final box = Hive.box(_boxName);
+    await box.put('categories_list', _customCategories);
+    notifyListeners();
+  }
+
 
   /// Add a sub-category / unit under a parent path
   Future<void> addSubCategory(String parentPath, String subCategoryName) async {
@@ -581,7 +636,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     return _flashcards.where((f) => f.noteId == noteId).toList();
   }
 
-  /// Get flashcards grouped by heading/groupTitle for a category
+  /// Get flashcards grouped by heading/groupTitle for a category in saved group order
   Map<String, List<Flashcard>> getGroupedFlashcardsForCategory(String categoryPath) {
     final cards = getFlashcardsForCategory(categoryPath);
     final Map<String, List<Flashcard>> map = {};
@@ -589,8 +644,67 @@ class PhotoNoteProvider extends ChangeNotifier {
       final group = card.groupTitle.trim().isEmpty ? 'Genel Bilgiler' : card.groupTitle.trim();
       map.putIfAbsent(group, () => []).add(card);
     }
+
+    final box = Hive.box(_boxName);
+    final savedGroupOrder = box.get('groups_order_$categoryPath');
+    if (savedGroupOrder is List) {
+      final Map<String, List<Flashcard>> orderedMap = {};
+      for (var g in savedGroupOrder) {
+        final gStr = g.toString();
+        if (map.containsKey(gStr)) {
+          orderedMap[gStr] = map.remove(gStr)!;
+        }
+      }
+      orderedMap.addAll(map);
+      return orderedMap;
+    }
     return map;
   }
+
+  /// Reorder flashcard group headers for a category
+  Future<void> reorderFlashcardGroups(String categoryPath, int oldIndex, int newIndex) async {
+    final map = getGroupedFlashcardsForCategory(categoryPath);
+    final groupKeys = map.keys.toList();
+    if (oldIndex < 0 || oldIndex >= groupKeys.length) return;
+    if (newIndex < 0 || newIndex >= groupKeys.length) return;
+    if (oldIndex == newIndex) return;
+
+    final moved = groupKeys.removeAt(oldIndex);
+    groupKeys.insert(newIndex, moved);
+
+    final box = Hive.box(_boxName);
+    await box.put('groups_order_$categoryPath', groupKeys);
+    notifyListeners();
+  }
+
+  /// Reorder flashcards list order in provider & Hive
+  Future<void> reorderFlashcards(List<Flashcard> cards, int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= cards.length) return;
+    if (newIndex < 0 || newIndex >= cards.length) return;
+    if (oldIndex == newIndex) return;
+
+    final item = cards.removeAt(oldIndex);
+    cards.insert(newIndex, item);
+
+    final updated = <Flashcard>[];
+    int idx = 0;
+    for (var card in _flashcards) {
+      if (cards.any((c) => c.id == card.id)) {
+        if (idx < cards.length) {
+          updated.add(cards[idx++]);
+        }
+      } else {
+        updated.add(card);
+      }
+    }
+    _flashcards = updated;
+
+    final box = Hive.box(_boxName);
+    final orderList = _flashcards.map((f) => f.id).toList();
+    await box.put('flashcards_order', orderList);
+    notifyListeners();
+  }
+
 
   /// Get flashcards grouped by heading/groupTitle for a specific PhotoNote
   Map<String, List<Flashcard>> getGroupedFlashcardsForNote(String noteId) {

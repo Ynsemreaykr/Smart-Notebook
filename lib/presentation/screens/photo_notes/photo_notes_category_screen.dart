@@ -401,12 +401,13 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
     );
   }
 
-  void _showAddEditFlashcardSheet({Flashcard? card, String? defaultGroup}) {
+  void _showAddEditFlashcardSheet({Flashcard? card, String? defaultGroup, String? targetNoteId}) {
     final frontController = TextEditingController(text: card?.frontText ?? '');
     final backController = TextEditingController(text: card?.backText ?? '');
     final groupController = TextEditingController(text: card?.groupTitle ?? defaultGroup ?? 'Genel Bilgiler');
     String selectedColor = card?.color ?? _presetColors.first;
     bool isEdit = card != null;
+
 
     showModalBottomSheet(
       context: context,
@@ -552,6 +553,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             frontText: frontController.text,
                             backText: backController.text,
                             category: widget.category,
+                            noteId: targetNoteId ?? card?.noteId,
                             groupTitle: grp,
                             color: selectedColor,
                           );
@@ -996,9 +998,67 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
         ),
       ),
     );
+  Widget _buildUnitCard(String subName, String fullPath, int noteCount) {
+    return BounceButton(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoNotesCategoryScreen(category: fullPath),
+          ),
+        );
+      },
+      child: AppCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        borderColor: const Color(0xFF14B8A6).withOpacity(0.4),
+        shadowColor: const Color(0xFF14B8A6),
+        child: Row(
+          children: [
+            const Icon(Icons.drag_handle_rounded, color: Colors.white38, size: 22),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14B8A6).withOpacity(0.18),
+                borderRadius: BorderRadius.circular(AppRadius.medium),
+              ),
+              child: const Icon(Icons.bookmark_rounded, color: Color(0xFF14B8A6), size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  AppText(
+                    subName,
+                    styleType: AppTextStyleType.bodyLarge,
+                    styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  const SizedBox(height: 2),
+                  AppText(
+                    '$noteCount Görsel Not',
+                    styleType: AppTextStyleType.caption,
+                    color: Colors.white70,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(4),
+              onPressed: () => _showSubCategoryOptions(subName),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
+
   Widget build(BuildContext context) {
     return AppContainer(
       hasGradient: true,
@@ -1055,7 +1115,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
               controller: _categoryScrollController,
               physics: const BouncingScrollPhysics(),
               slivers: [
-                // 1. Sub-Categories / Units Section (If any exist)
+                // 1. Sub-Categories / Üniteler Section (Alt alta ve sürüklenebilir)
                 if (subCategories.isNotEmpty) ...[
                   SliverToBoxAdapter(
                     child: Padding(
@@ -1077,78 +1137,59 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                       ),
                     ),
                   ),
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 84,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: subCategories.length,
-                        itemBuilder: (context, index) {
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
                           final subName = subCategories[index];
                           final fullPath = '${widget.category} / $subName';
                           final noteCount = provider.getNoteCountForCategory(fullPath, includeSubCategories: true);
 
-                          return Container(
-                            margin: const EdgeInsets.only(right: 12),
-                            child: BounceButton(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => PhotoNotesCategoryScreen(category: fullPath),
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: DragTarget<int>(
+                              onWillAcceptWithDetails: (details) => details.data != index,
+                              onAcceptWithDetails: (details) {
+                                final oldIndex = details.data;
+                                final newIndex = index;
+                                provider.reorderSubCategories(widget.category, oldIndex, newIndex);
+                              },
+                              builder: (context, candidateData, rejectedData) {
+                                final isHovered = candidateData.isNotEmpty;
+                                return LongPressDraggable<int>(
+                                  data: index,
+                                  feedback: Material(
+                                    color: Colors.transparent,
+                                    elevation: 8,
+                                    child: SizedBox(
+                                      width: MediaQuery.of(context).size.width - 32,
+                                      child: Opacity(
+                                        opacity: 0.85,
+                                        child: _buildUnitCard(subName, fullPath, noteCount),
+                                      ),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.35,
+                                    child: _buildUnitCard(subName, fullPath, noteCount),
+                                  ),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(AppRadius.medium),
+                                      border: isHovered
+                                          ? Border.all(color: const Color(0xFF14B8A6), width: 2.5)
+                                          : null,
+                                    ),
+                                    child: _buildUnitCard(subName, fullPath, noteCount),
                                   ),
                                 );
                               },
-                              child: AppCard(
-                                margin: EdgeInsets.zero,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                borderColor: const Color(0xFF14B8A6).withOpacity(0.4),
-                                shadowColor: const Color(0xFF14B8A6),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF14B8A6).withOpacity(0.18),
-                                        borderRadius: BorderRadius.circular(AppRadius.medium),
-                                      ),
-                                      child: const Icon(Icons.bookmark_rounded, color: Color(0xFF14B8A6), size: 22),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        AppText(
-                                          subName,
-                                          styleType: AppTextStyleType.bodyMedium,
-                                          styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                                        ),
-                                        AppText(
-                                          '$noteCount Not',
-                                          styleType: AppTextStyleType.caption,
-                                          color: Colors.white70,
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Material(
-                                      color: Colors.transparent,
-                                      child: IconButton(
-                                        icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 18),
-                                        constraints: const BoxConstraints(),
-                                        padding: const EdgeInsets.all(4),
-                                        onPressed: () => _showSubCategoryOptions(subName),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                             ),
                           );
                         },
+                        childCount: subCategories.length,
                       ),
                     ),
                   ),
@@ -1265,7 +1306,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                   ),
 
-                // 3. Grouped Flashcards Section (Bilgi Kartları Grupları)
+                // 3. Bilgi Kartları Bölümü (Genel & Görsel Kart Bilgi Kartları)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
@@ -1293,148 +1334,206 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                   ),
                 ),
 
+                // 3A. Ünitenin Genel Bilgi Kartları (Görsele bağlı olmayanlar)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.folder_special_rounded, color: Colors.white70, size: 18),
+                        SizedBox(width: 6),
+                        AppText(
+                          'Ünite Genel Bilgi Kartları',
+                          styleType: AppTextStyleType.bodyMedium,
+                          styleOverride: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
                 if (groupedFlashcards.isEmpty)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                       child: Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: const Color(0xFF14B8A6).withOpacity(0.08),
                           borderRadius: BorderRadius.circular(AppRadius.medium),
                           border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.2), width: 1),
                         ),
-                        child: Column(
-                          children: [
-                            const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 32),
-                            const SizedBox(height: 6),
-                            const AppText(
-                              'Henüz bilgi kartı eklenmemiş.',
-                              styleType: AppTextStyleType.bodyMedium,
-                              styleOverride: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                            ),
-                            const SizedBox(height: 4),
-                            AppText(
-                              'Örnek: Ön yüzde "Cebeci", arka yüzde "Zırh ve silah temin eder" şeklinde kartlar oluşturup "Askeri Teşkilat" gibi başlıklar altında gruplayabilirsiniz.',
-                              styleType: AppTextStyleType.caption,
-                              color: AppColors.textSecondary,
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
+                        child: const Center(
+                          child: AppText(
+                            'Bu üniteye henüz genel bilgi kartı eklenmemiş.',
+                            styleType: AppTextStyleType.caption,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ),
                     ),
                   )
                 else
-                  ...groupedFlashcards.entries.expand((entry) {
-                    final groupTitle = entry.key;
-                    final cards = entry.value;
+                  ...groupedFlashcards.entries.toList().asMap().entries.expand((groupMapEntry) {
+                    final groupIdx = groupMapEntry.key;
+                    final groupTitle = groupMapEntry.value.key;
+                    final cards = groupMapEntry.value.value;
 
                     return [
-                      // Heading Banner Header (Acts as DragTarget to receive dropped flashcards)
+                      // Reorderable Group Heading Banner Header
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                          child: DragTarget<Flashcard>(
-                            onWillAcceptWithDetails: (details) => details.data.groupTitle.trim() != groupTitle.trim(),
-                            onAcceptWithDetails: (details) async {
-                              final movedCard = details.data;
-                              await context.read<PhotoNoteProvider>().moveFlashcardToGroup(
-                                    flashcardId: movedCard.id,
-                                    targetGroupTitle: groupTitle,
-                                  );
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Kart "$groupTitle" başlığına taşındı'),
-                                    duration: const Duration(seconds: 2),
-                                    backgroundColor: const Color(0xFF14B8A6),
-                                  ),
-                                );
-                              }
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          child: DragTarget<int>(
+                            onWillAcceptWithDetails: (details) => details.data != groupIdx,
+                            onAcceptWithDetails: (details) {
+                              provider.reorderFlashcardGroups(widget.category, details.data, groupIdx);
                             },
-                            builder: (context, candidateData, rejectedData) {
-                              final isHovering = candidateData.isNotEmpty;
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: isHovering
-                                      ? const Color(0xFF14B8A6).withOpacity(0.35)
-                                      : const Color(0xFF14B8A6).withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(AppRadius.medium),
-                                  border: Border.all(
-                                    color: isHovering
-                                        ? const Color(0xFF14B8A6)
-                                        : const Color(0xFF14B8A6).withOpacity(0.35),
-                                    width: isHovering ? 2.5 : 1,
-                                  ),
-                                  boxShadow: isHovering
-                                      ? [BoxShadow(color: const Color(0xFF14B8A6).withOpacity(0.4), blurRadius: 10, spreadRadius: 2)]
-                                      : null,
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            isHovering ? Icons.move_to_inbox_rounded : Icons.topic_rounded,
-                                            color: const Color(0xFF14B8A6),
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: AppText(
-                                              isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
-                                              styleType: AppTextStyleType.bodyLarge,
-                                              styleOverride: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            builder: (context, groupCandidateData, rejectedData) {
+                              final isHeaderHovered = groupCandidateData.isNotEmpty;
+
+                              return DragTarget<Flashcard>(
+                                onWillAcceptWithDetails: (details) => details.data.groupTitle.trim() != groupTitle.trim(),
+                                onAcceptWithDetails: (details) async {
+                                  final movedCard = details.data;
+                                  await context.read<PhotoNoteProvider>().moveFlashcardToGroup(
+                                        flashcardId: movedCard.id,
+                                        targetGroupTitle: groupTitle,
+                                      );
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Kart "$groupTitle" başlığına taşındı'),
+                                        duration: const Duration(seconds: 2),
+                                        backgroundColor: const Color(0xFF14B8A6),
+                                      ),
+                                    );
+                                  }
+                                },
+                                builder: (context, cardCandidateData, rejectedData) {
+                                  final isCardHovering = cardCandidateData.isNotEmpty;
+                                  final isHover = isHeaderHovered || isCardHovering;
+
+                                  return LongPressDraggable<int>(
+                                    data: groupIdx,
+                                    feedback: Material(
+                                      color: Colors.transparent,
+                                      elevation: 8,
+                                      child: SizedBox(
+                                        width: MediaQuery.of(context).size.width - 32,
+                                        child: Opacity(
+                                          opacity: 0.9,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF14B8A6).withOpacity(0.3),
-                                              borderRadius: BorderRadius.circular(12),
+                                              color: const Color(0xFF14B8A6).withOpacity(0.4),
+                                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                                              border: Border.all(color: const Color(0xFF14B8A6), width: 2),
                                             ),
-                                            child: AppText(
-                                              '${cards.length} Kart',
-                                              styleType: AppTextStyleType.caption,
-                                              styleOverride: const TextStyle(color: Colors.white, fontSize: 11),
+                                            child: Text(
+                                              groupTitle,
+                                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15),
                                             ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.3,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white10,
+                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                        ),
+                                        child: Text(groupTitle, style: const TextStyle(color: Colors.white70)),
+                                      ),
+                                    ),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: isHover
+                                            ? const Color(0xFF14B8A6).withOpacity(0.35)
+                                            : const Color(0xFF14B8A6).withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(AppRadius.medium),
+                                        border: Border.all(
+                                          color: isHover
+                                              ? const Color(0xFF14B8A6)
+                                              : const Color(0xFF14B8A6).withOpacity(0.35),
+                                          width: isHover ? 2.5 : 1,
+                                        ),
+                                        boxShadow: isHover
+                                            ? [BoxShadow(color: const Color(0xFF14B8A6).withOpacity(0.4), blurRadius: 10, spreadRadius: 2)]
+                                            : null,
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.drag_handle_rounded, color: Colors.white38, size: 20),
+                                                const SizedBox(width: 6),
+                                                Icon(
+                                                  isHover ? Icons.move_to_inbox_rounded : Icons.topic_rounded,
+                                                  color: const Color(0xFF14B8A6),
+                                                  size: 20,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: AppText(
+                                                    isCardHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
+                                                    styleType: AppTextStyleType.bodyLarge,
+                                                    styleOverride: TextStyle(
+                                                      fontWeight: FontWeight.bold,
+                                                      color: isHover ? const Color(0xFF14B8A6) : Colors.white,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF14B8A6).withOpacity(0.3),
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                  child: AppText(
+                                                    '${cards.length} Kart',
+                                                    styleType: AppTextStyleType.caption,
+                                                    styleOverride: const TextStyle(color: Colors.white, fontSize: 11),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.all(4),
+                                                tooltip: 'Başlığı Düzenle',
+                                                onPressed: () => _showRenameHeadingDialog(groupTitle),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              IconButton(
+                                                icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.all(4),
+                                                tooltip: 'Bu Başlığa Kart Ekle',
+                                                onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
                                     ),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.edit_rounded, color: Colors.white70, size: 18),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(4),
-                                          tooltip: 'Başlığı Düzenle',
-                                          onPressed: () => _showRenameHeadingDialog(groupTitle),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        IconButton(
-                                          icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 22),
-                                          constraints: const BoxConstraints(),
-                                          padding: const EdgeInsets.all(4),
-                                          tooltip: 'Bu Başlığa Kart Ekle',
-                                          onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
+                                  );
+                                },
                               );
                             },
                           ),
@@ -1496,6 +1595,208 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                       ),
                     ];
                   }).toList(),
+
+                // 3B. Görsel Kartlara Ait Bilgi Kartları (Farklı Renkte / Özel Vurgulu)
+                if (notes.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.photo_library_rounded, color: Colors.amber, size: 20),
+                          SizedBox(width: 8),
+                          AppText(
+                            'Görsel Kart Bilgi Kartları',
+                            styleType: AppTextStyleType.bodyLarge,
+                            styleOverride: TextStyle(fontWeight: FontWeight.bold, color: Colors.amber),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  ...notes.expand((note) {
+                    final noteCards = provider.getFlashcardsForNote(note.id);
+                    final noteColor = _parseColor(note.color);
+
+                    return [
+                      // Photo Note Specific Flashcard Header (Farklı Renkte / Vurgulu Banner)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                          child: DragTarget<Flashcard>(
+                            onWillAcceptWithDetails: (details) => details.data.noteId != note.id,
+                            onAcceptWithDetails: (details) async {
+                              final movedCard = details.data;
+                              final box = Hive.box('photo_notes');
+                              final raw = box.get(movedCard.id);
+                              if (raw is Map) {
+                                final card = Flashcard.fromMap(raw).copyWith(
+                                  noteId: note.id,
+                                  groupTitle: '${note.title} Kartları',
+                                );
+                                await box.put(movedCard.id, card.toMap());
+                                await provider.loadPhotoNotes();
+                              }
+                            },
+                            builder: (context, candidateData, rejectedData) {
+                              final isHovering = candidateData.isNotEmpty;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      noteColor.withOpacity(isHovering ? 0.5 : 0.28),
+                                      noteColor.withOpacity(isHovering ? 0.3 : 0.12),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(AppRadius.medium),
+                                  border: Border.all(
+                                    color: isHovering ? noteColor : noteColor.withOpacity(0.55),
+                                    width: isHovering ? 2.5 : 1.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: noteColor.withOpacity(0.25),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: noteColor.withOpacity(0.35),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(Icons.style_rounded, color: noteColor, size: 18),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                AppText(
+                                                  '${note.title} Kartları',
+                                                  styleType: AppTextStyleType.bodyLarge,
+                                                  styleOverride: TextStyle(fontWeight: FontWeight.bold, color: noteColor),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                                AppText(
+                                                  '${noteCards.length} Kart',
+                                                  styleType: AppTextStyleType.caption,
+                                                  color: Colors.white70,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      icon: Icon(Icons.add_rounded, size: 16, color: noteColor),
+                                      label: Text(
+                                        'Kart Ekle',
+                                        style: TextStyle(color: noteColor, fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                      onPressed: () => _showAddEditFlashcardSheet(
+                                        defaultGroup: '${note.title} Kartları',
+                                        targetNoteId: note.id,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+
+                      // Grid of cards linked to this photo note
+                      if (noteCards.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: noteColor.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(AppRadius.medium),
+                                border: Border.all(color: noteColor.withOpacity(0.18)),
+                              ),
+                              child: Center(
+                                child: AppText(
+                                  'Bu görsel nota henüz bilgi kartı eklenmemiş.',
+                                  styleType: AppTextStyleType.caption,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                          sliver: SliverGrid(
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12.0,
+                              mainAxisSpacing: 12.0,
+                              childAspectRatio: 1.1,
+                            ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final card = noteCards[index];
+                                return FadeSlideEntrance(
+                                  delay: Duration(milliseconds: 40 * index),
+                                  child: LongPressDraggable<Flashcard>(
+                                    data: card,
+                                    onDragUpdate: _handleDragUpdate,
+                                    onDragEnd: (_) => _stopAutoScroll(),
+                                    onDraggableCanceled: (_, __) => _stopAutoScroll(),
+                                    feedback: Material(
+                                      elevation: 8,
+                                      color: Colors.transparent,
+                                      borderRadius: BorderRadius.circular(AppRadius.medium),
+                                      child: SizedBox(
+                                        width: (MediaQuery.of(context).size.width - 44) / 2,
+                                        height: 140,
+                                        child: Opacity(
+                                          opacity: 0.9,
+                                          child: FlipCardWidget(
+                                            flashcard: card,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.25,
+                                      child: FlipCardWidget(
+                                        flashcard: card,
+                                        onOptionsTap: () {},
+                                      ),
+                                    ),
+                                    child: FlipCardWidget(
+                                      flashcard: card,
+                                      onOptionsTap: () => _showFlashcardOptions(card),
+                                    ),
+                                  ),
+                                );
+                              },
+                              childCount: noteCards.length,
+                            ),
+                          ),
+                        ),
+                    ];
+                  }).toList(),
+                ],
 
                 // Bottom Add New Heading / Topic Group Button (Sayfanın en altında)
                 SliverToBoxAdapter(
