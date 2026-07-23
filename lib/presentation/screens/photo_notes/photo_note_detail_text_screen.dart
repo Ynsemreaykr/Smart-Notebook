@@ -11,6 +11,7 @@ import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../../widgets/common/app_container.dart';
 import '../../../widgets/common/app_card.dart';
+import '../../widgets/single_tap_cursor_textfield.dart';
 
 class PhotoNoteDetailTextScreen extends StatefulWidget {
   final String noteId;
@@ -427,48 +428,21 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                           borderRadius: BorderRadius.circular(AppRadius.medium),
                           border: Border.all(color: AppColors.surfaceLighter, width: 1.5),
                         ),
-                        child: GestureDetector(
-                          onLongPressStart: (_) {
-                            _isLongPressing = true;
-                            _longPressResetTimer?.cancel();
-                          },
-                          onLongPressEnd: (_) {
-                            _longPressResetTimer?.cancel();
-                            _longPressResetTimer = Timer(const Duration(milliseconds: 1200), () {
-                              _isLongPressing = false;
-                            });
-                          },
-                          onLongPressCancel: () {
-                            _isLongPressing = false;
-                          },
-                          child: TextField(
-                            controller: _textController,
-                            textCapitalization: TextCapitalization.sentences,
-                            autofocus: false, // DO NOT open keyboard automatically until tapped!
-                            maxLines: null,
-                            expands: true,
-                            keyboardType: TextInputType.multiline,
-                            textAlignVertical: TextAlignVertical.top,
-                            style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
-                            onTap: () {
-                              if (!_isLongPressing) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  if (mounted && !_isLongPressing) {
-                                    final sel = _textController.selection;
-                                    if (!sel.isCollapsed && sel.isValid) {
-                                      _textController.selection = TextSelection.collapsed(offset: sel.extentOffset);
-                                    }
-                                  }
-                                });
-                              }
-                            },
-                            decoration: InputDecoration(
-                              hintText: 'Örn:\nDelta ovası oluşumunu kolaylaştırır:\n    az gelgit\n    çok alüvyon\n    enine kıyı\n\nNot almak için ekrana dokunabilirsiniz.',
-                              hintStyle: TextStyle(color: AppColors.textMuted.withOpacity(0.6), fontSize: 14, height: 1.5),
-                              border: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                            ),
+                        child: SingleTapCursorTextField(
+                          controller: _textController,
+                          textCapitalization: TextCapitalization.sentences,
+                          autofocus: false,
+                          maxLines: null,
+                          expands: true,
+                          keyboardType: TextInputType.multiline,
+                          textAlignVertical: TextAlignVertical.top,
+                          style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
+                          decoration: InputDecoration(
+                            hintText: 'Örn:\nDelta ovası oluşumunu kolaylaştırır:\n    az gelgit\n    çok alüvyon\n    enine kıyı\n\nNot almak için ekrana dokunabilirsiniz.',
+                            hintStyle: TextStyle(color: AppColors.textMuted.withOpacity(0.6), fontSize: 14, height: 1.5),
+                            border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
                           ),
                         ),
                       ),

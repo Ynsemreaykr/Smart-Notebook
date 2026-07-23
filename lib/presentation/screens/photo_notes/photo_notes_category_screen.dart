@@ -15,6 +15,7 @@ import '../../widgets/bounce_button.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/flip_card_widget.dart';
+import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_viewer_screen.dart';
 import 'photo_note_detail_text_screen.dart';
 
@@ -206,7 +207,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     AppSpacing.gapHMd,
 
                     // Title Input
-                    TextField(
+                    SingleTapCursorTextField(
                       controller: titleController,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
@@ -248,7 +249,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     AppSpacing.gapHMd,
 
                     // Written Note (Optional)
-                    TextField(
+                    SingleTapCursorTextField(
                       controller: noteTextController,
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: 3,
@@ -395,7 +396,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     AppSpacing.gapHMd,
 
                     // Heading Group Input
-                    TextField(
+                    SingleTapCursorTextField(
                       controller: groupController,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
@@ -407,7 +408,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     AppSpacing.gapHMd,
 
                     // Front Text Input
-                    TextField(
+                    SingleTapCursorTextField(
                       controller: frontController,
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: 2,
@@ -420,7 +421,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     AppSpacing.gapHMd,
 
                     // Back Text Input
-                    TextField(
+                    SingleTapCursorTextField(
                       controller: backController,
                       textCapitalization: TextCapitalization.sentences,
                       maxLines: 3,

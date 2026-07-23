@@ -13,6 +13,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../widgets/flip_card_widget.dart';
+import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_detail_text_screen.dart';
 
 class PhotoNoteViewerScreen extends StatefulWidget {
@@ -468,7 +469,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   ],
                 ),
                 AppSpacing.gapHMd,
-                TextField(
+                SingleTapCursorTextField(
                   controller: groupController,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
@@ -478,7 +479,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   ),
                 ),
                 AppSpacing.gapHMd,
-                TextField(
+                SingleTapCursorTextField(
                   controller: frontController,
                   textCapitalization: TextCapitalization.sentences,
                   maxLines: 2,
@@ -489,7 +490,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   ),
                 ),
                 AppSpacing.gapHMd,
-                TextField(
+                SingleTapCursorTextField(
                   controller: backController,
                   textCapitalization: TextCapitalization.sentences,
                   maxLines: 3,
