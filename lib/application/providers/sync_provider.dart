@@ -183,6 +183,20 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
+  /// Returns a consistent, Firestore-safe document ID for a user.
+  /// Uses email (normalized) so Google login and Email/Password login
+  /// with the same email address share the same backup data.
+  String _firestoreDocId(User user) {
+    final email = user.email;
+    if (email != null && email.isNotEmpty) {
+      // Replace '.' and '@' which are invalid in Firestore doc IDs
+      return email.toLowerCase().trim()
+          .replaceAll('.', '_')
+          .replaceAll('@', '_at_');
+    }
+    return user.uid;
+  }
+
   /// Helper method to recursively convert any Hive object, map, or list into a 100% Firestore-safe primitive data structure
   dynamic _sanitizeKeys(dynamic input) {
     if (input is Map) {
@@ -285,7 +299,9 @@ class SyncProvider extends ChangeNotifier {
         return nonEncodable.toString();
       });
 
-      currentStep = "3. Kullanıcı Kimliği Doğrulanıyor (UID: ${user.uid})";
+      // Use email as Firestore document key so Google login and Email login share the same backup
+      final String docId = _firestoreDocId(user);
+      currentStep = "3. Kullanıcı Doğrulanıyor (${user.email ?? user.uid})";
       // Refresh user auth token to ensure active credentials for Firestore
       try {
         await user.getIdToken(true);
@@ -294,14 +310,13 @@ class SyncProvider extends ChangeNotifier {
       }
 
       currentStep = "4. Ana Doküman Oluşturuluyor (Boyut: ${jsonString.length} kr)";
-      // 4. Store each 400k chunk as an individual document inside users/{uid}/backups/latest/chunks/chunk_X to bypass 1MB single-document limit
+      // 4. Store each 400k chunk as an individual document inside users/{email}/backups/latest/chunks/chunk_X
       const int chunkSize = 400000;
       final int totalChunks = (jsonString.length / chunkSize).ceil();
-      final String uid = user.uid.trim();
 
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(uid)
+          .doc(docId)
           .collection('backups')
           .doc('latest')
           .set({
@@ -309,12 +324,13 @@ class SyncProvider extends ChangeNotifier {
         'deviceInfo': 'Android App',
         'chunkCount': totalChunks > 0 ? totalChunks : 1,
         'totalSize': jsonString.length,
+        'ownerEmail': user.email ?? '',
       });
 
       if (jsonString.isEmpty) {
         await FirebaseFirestore.instance
             .collection('users')
-            .doc(uid)
+            .doc(docId)
             .collection('backups')
             .doc('latest')
             .collection('chunks')
@@ -330,7 +346,7 @@ class SyncProvider extends ChangeNotifier {
 
           await FirebaseFirestore.instance
               .collection('users')
-              .doc(uid)
+              .doc(docId)
               .collection('backups')
               .doc('latest')
               .collection('chunks')
@@ -374,17 +390,18 @@ class SyncProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final String docId = _firestoreDocId(user);
       // 1. Fetch backup document from Cloud
       final doc = await FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
+          .doc(docId)
           .collection('backups')
           .doc('latest')
           .get();
 
       if (!doc.exists || doc.data() == null) {
         _isSyncing = false;
-        _syncError = "Bulutta kayıtlı yedek bulunamadı.";
+        _syncError = "Bulutta kayıtlı yedek bulunamadı. (${user.email ?? user.uid})";
         notifyListeners();
         return false;
       }
@@ -398,7 +415,7 @@ class SyncProvider extends ChangeNotifier {
         // Fetch chunk sub-documents
         final chunksSnap = await FirebaseFirestore.instance
             .collection('users')
-            .doc(user.uid)
+            .doc(docId)
             .collection('backups')
             .doc('latest')
             .collection('chunks')
