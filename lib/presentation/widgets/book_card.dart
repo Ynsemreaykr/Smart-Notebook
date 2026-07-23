@@ -5,7 +5,7 @@ import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text.dart';
 import 'bounce_button.dart';
 
-/// A vertical "book spine" widget that looks like a real book standing on a shelf.
+/// A modern square/rectangular book card with book symbol and page info
 class BookCard extends StatelessWidget {
   final Book book;
   final int pageCount;
@@ -32,179 +32,117 @@ class BookCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = _parseColor(book.coverColor);
-    final spineColor = accentColor;
-    final darkSpine = HSLColor.fromColor(spineColor)
-        .withLightness((HSLColor.fromColor(spineColor).lightness - 0.18).clamp(0.0, 1.0))
-        .toColor();
-    final lightSpine = HSLColor.fromColor(spineColor)
-        .withLightness((HSLColor.fromColor(spineColor).lightness + 0.22).clamp(0.0, 1.0))
-        .toColor();
+    final themeColor = _parseColor(book.coverColor);
 
     return GestureDetector(
       onLongPress: () => _showContextMenu(context),
       child: BounceButton(
         onTap: onTap,
-        child: SizedBox(
-          width: 72,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Book body ──
-              Expanded(
-                child: Container(
-                  width: 72,
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(4),
-                      topRight: Radius.circular(6),
-                      bottomLeft: Radius.circular(2),
-                      bottomRight: Radius.circular(4),
-                    ),
-                    gradient: LinearGradient(
-                      colors: [darkSpine, spineColor, lightSpine, spineColor],
-                      stops: const [0.0, 0.08, 0.92, 1.0],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                        offset: const Offset(4, 4),
-                      ),
-                      BoxShadow(
-                        color: accentColor.withValues(alpha: 0.30),
-                        blurRadius: 14,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      // Subtle top highlight (like a real book edge catching light)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.25),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(4),
-                              topRight: Radius.circular(6),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Left dark edge (spine binding)
-                      Positioned(
-                        top: 0,
-                        left: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 5,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(4),
-                              bottomLeft: Radius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Decorative horizontal lines (page edges at top)
-                      Positioned(
-                        top: 16,
-                        left: 8,
-                        right: 8,
-                        child: Column(
-                          children: List.generate(
-                            3,
-                            (i) => Container(
-                              height: 1,
-                              margin: const EdgeInsets.symmetric(vertical: 2),
-                              color: Colors.white.withValues(alpha: 0.12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Title text (rotated vertically)
-                      Positioned.fill(
-                        child: Center(
-                          child: RotatedBox(
-                            quarterTurns: 1,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(
-                                book.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.8,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black.withValues(alpha: 0.6),
-                                      blurRadius: 4,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Page count badge at bottom
-                      Positioned(
-                        bottom: 10,
-                        left: 6,
-                        right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '$pageCount s.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 8,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // ── Book base (bottom thick edge) ──
-              Container(
-                height: 8,
-                width: 76,
-                decoration: BoxDecoration(
-                  color: darkSpine,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(3),
-                    bottomRight: Radius.circular(3),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 4,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: themeColor.withOpacity(0.4), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: themeColor.withOpacity(0.2),
+                blurRadius: 10,
+                spreadRadius: 1,
+                offset: const Offset(0, 4),
               ),
             ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              children: [
+                // Top Color Accent Bar
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 6,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [themeColor, themeColor.withOpacity(0.6)],
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header Row: Book Icon Badge & Triple Dot Menu
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: themeColor.withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              Icons.menu_book_rounded,
+                              color: themeColor,
+                              size: 26,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.more_vert_rounded, color: Colors.white70, size: 20),
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.all(4),
+                            onPressed: () => _showContextMenu(context),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      // Book Title
+                      AppText(
+                        book.title,
+                        styleType: AppTextStyleType.bodyLarge,
+                        styleOverride: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontSize: 15,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      // Page Count Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: themeColor.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: themeColor.withOpacity(0.4), width: 1),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.description_outlined, size: 12, color: themeColor),
+                            const SizedBox(width: 4),
+                            AppText(
+                              '$pageCount Sayfa',
+                              styleType: AppTextStyleType.caption,
+                              styleOverride: TextStyle(
+                                color: themeColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -218,7 +156,7 @@ class BookCard extends StatelessWidget {
       backgroundColor: Colors.transparent,
       builder: (_) => AppCard(
         margin: const EdgeInsets.all(12),
-        borderColor: accentColor.withValues(alpha: 0.3),
+        borderColor: accentColor.withOpacity(0.3),
         shadowColor: accentColor,
         borderRadius: 20,
         padding: EdgeInsets.zero,
@@ -231,7 +169,7 @@ class BookCard extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.textMuted.withValues(alpha: 0.4),
+                color: AppColors.textMuted.withOpacity(0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -240,12 +178,13 @@ class BookCard extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    width: 36,
-                    height: 54,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
-                      color: accentColor,
-                      borderRadius: BorderRadius.circular(4),
+                      color: accentColor.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(10),
                     ),
+                    child: Icon(Icons.menu_book_rounded, color: accentColor, size: 24),
                   ),
                   const SizedBox(width: 16),
                   Expanded(

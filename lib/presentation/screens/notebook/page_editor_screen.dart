@@ -209,7 +209,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     await context.read<PageProvider>().updatePage(
       widget.pageId,
       title: _titleCtrl.text,
-      content: '${_pages.length} Alt Sayfa',
+      content: '',
       drawingJson: newJson,
       isAdvanced: true,
     );
@@ -456,31 +456,38 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     final isTextMode = _currentMode == EditorMode.text;
     final hasBg = pageData.backgroundImageBase64 != null && pageData.backgroundImageBase64!.isNotEmpty;
     
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        setState(() {
-          _selectedTextBoxId = null;
-          _selectedImageId = null;
-        });
-      },
-      child: AppCard(
-        margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        backgroundColor: hasBg ? Colors.white : AppColors.surface,
-        borderColor: AppColors.textMuted.withValues(alpha: 0.15),
-        padding: EdgeInsets.zero,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 1. Arka Plan: PDF/Görsel tam sayfa kaplıyor
-            if (hasBg)
-              Positioned.fill(
-                child: Image.memory(
-                  base64Decode(pageData.backgroundImageBase64!),
-                  fit: BoxFit.fill,
-                  gaplessPlayback: true,
+    return InteractiveViewer(
+      minScale: 0.8,
+      maxScale: 5.0,
+      panEnabled: true,
+      scaleEnabled: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() {
+            _selectedTextBoxId = null;
+            _selectedImageId = null;
+          });
+        },
+        child: AppCard(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          backgroundColor: hasBg ? Colors.white : AppColors.surface,
+          borderColor: AppColors.textMuted.withValues(alpha: 0.15),
+          padding: EdgeInsets.zero,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Arka Plan: PDF/Görsel A4 oranında (Basık Değil)
+              if (hasBg)
+                Positioned.fill(
+                  child: Center(
+                    child: Image.memory(
+                      base64Decode(pageData.backgroundImageBase64!),
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
+                  ),
                 ),
-              ),
 
             // 2. Text Editor — arka plan yoksa göster, varsa gizle
             if (!hasBg)
@@ -1071,6 +1078,65 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     );
   }
 
+  void _showGoToPageDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const AppText(
+          'Sayfaya Git',
+          styleType: AppTextStyleType.headingMedium,
+          styleOverride: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: ctrl,
+          decoration: InputDecoration(
+            hintText: '1 - ${_pages.length} arası sayfa numarası',
+            prefixIcon: const Icon(Icons.numbers),
+          ),
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          onSubmitted: (value) {
+            final pageNum = int.tryParse(value);
+            if (pageNum != null && pageNum >= 1 && pageNum <= _pages.length) {
+              Navigator.pop(ctx, pageNum - 1);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.medium),
+              ),
+            ),
+            onPressed: () {
+              final pageNum = int.tryParse(ctrl.text);
+              if (pageNum != null && pageNum >= 1 && pageNum <= _pages.length) {
+                Navigator.pop(ctx, pageNum - 1);
+              }
+            },
+            child: const AppText('Git', styleType: AppTextStyleType.label, color: Colors.white),
+          ),
+        ],
+      ),
+    ).then((pageIndex) {
+      if (pageIndex != null && _pageController.hasClients) {
+        _pageController.animateToPage(
+          pageIndex,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
   Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
@@ -1095,10 +1161,30 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                   : null,
             ),
             const Spacer(),
-            AppText(
-              'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
-              styleType: AppTextStyleType.headingSmall,
-              styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+            GestureDetector(
+              onTap: _showGoToPageDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.import_contacts_rounded, size: 18, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    AppText(
+                      'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
+                      styleType: AppTextStyleType.bodyMedium,
+                      styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.arrow_drop_down, color: AppColors.primary, size: 18),
+                  ],
+                ),
+              ),
             ),
             const Spacer(),
             IconButton(

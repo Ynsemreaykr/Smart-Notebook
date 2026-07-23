@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../application/providers/book_provider.dart';
+import '../../../application/providers/page_provider.dart';
 import '../../../application/providers/theme_provider.dart';
 import '../../../data/repositories/page_repository.dart';
+import '../../../domain/models/book.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/book_card.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/file_picker_helper.dart';
-import '../notebook/book_detail_screen.dart';
+import '../notebook/page_editor_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -52,6 +54,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
         );
       }
     });
+  }
+
+  void _openBook(Book book) async {
+    final pageProvider = context.read<PageProvider>();
+    await pageProvider.loadPages(book.id);
+    final pages = pageProvider.pages;
+
+    if (!mounted) return;
+
+    if (pages.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PageEditorScreen(pageId: pages.first.id),
+        ),
+      ).then((_) {
+        if (mounted) context.read<BookProvider>().loadBooks();
+      });
+    } else {
+      final newPage = await pageProvider.addPage(book.id, 'Sayfa 1', isAdvanced: true);
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PageEditorScreen(pageId: newPage.id),
+          ),
+        ).then((_) {
+          if (mounted) context.read<BookProvider>().loadBooks();
+        });
+      }
+    }
   }
 
   void _showRenameDialog(String bookId, String currentTitle) {
@@ -248,16 +281,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       child: BookCard(
                         book: book,
                         pageCount: pageCount,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => BookDetailScreen(bookId: book.id),
-                            ),
-                          ).then((_) {
-                            context.read<BookProvider>().loadBooks();
-                          });
-                        },
+                        onTap: () => _openBook(book),
                         onRename: () => _showRenameDialog(book.id, book.title),
                         onDelete: () => _showDeleteConfirmation(book.id, book.title),
                       ),
