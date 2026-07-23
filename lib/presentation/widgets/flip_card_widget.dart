@@ -172,22 +172,26 @@ class _FlipCardWidgetState extends State<FlipCardWidget> with SingleTickerProvid
                 ),
               ),
 
-            // Content Center
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 16.0),
-                child: AppText(
-                  text,
-                  styleType: isFront ? AppTextStyleType.bodyLarge : AppTextStyleType.bodyMedium,
-                  styleOverride: TextStyle(
-                    color: Colors.white,
-                    fontWeight: isFront ? FontWeight.bold : FontWeight.normal,
-                    fontSize: isFront ? 16 : 14,
-                    height: 1.4,
+            // Content Center (Scrollable for long text)
+            Positioned.fill(
+              top: 24,
+              bottom: 16,
+              left: 4,
+              right: 4,
+              child: Center(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: AppText(
+                    text,
+                    styleType: isFront ? AppTextStyleType.bodyLarge : AppTextStyleType.bodyMedium,
+                    styleOverride: TextStyle(
+                      color: Colors.white,
+                      fontWeight: isFront ? FontWeight.bold : FontWeight.normal,
+                      fontSize: isFront ? 15 : 13.5,
+                      height: 1.35,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
