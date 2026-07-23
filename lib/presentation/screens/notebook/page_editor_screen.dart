@@ -662,7 +662,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             label: 'Metin', 
             onTap: hasBg ? () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Arka planı olan sayfalarda ana metin aracı kullanılamaz. Metin Kutusu ekleyebilirsiniz.'), duration: Duration(seconds: 2)),
+                const SnackBar(content: Text('Arka planı olan sayfalarda ana metin aracı kullanılamaz.'), duration: Duration(seconds: 2)),
               );
             } : () {
               setState(() {
@@ -713,9 +713,16 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           ),
           const VerticalDivider(),
           _ToolbarAction(
-            icon: Icons.text_snippet, 
-            label: 'Metin Kutusu', 
-            onTap: _addTextBox,
+            icon: Icons.pan_tool_rounded, 
+            label: 'Hareket', 
+            active: _currentMode == EditorMode.pan,
+            onTap: () {
+              setState(() {
+                _selectedTextBoxId = null;
+                _selectedImageId = null;
+                _currentMode = EditorMode.pan;
+              });
+            },
           ),
         ],
       ),
