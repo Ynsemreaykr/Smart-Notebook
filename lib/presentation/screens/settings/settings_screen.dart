@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../widgets/common/app_card.dart';
 import '../../../widgets/common/app_container.dart';
 import '../../../widgets/common/app_text.dart';
@@ -14,6 +16,7 @@ import '../../../application/providers/note_provider.dart';
 import '../../../application/providers/plan_provider.dart';
 import '../../../application/providers/task_provider.dart';
 import '../../../application/providers/habit_provider.dart';
+import '../../../application/providers/photo_note_provider.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -26,6 +29,121 @@ class SettingsScreen extends StatelessWidget {
     context.read<PlanProvider>().loadPlans();
     context.read<TaskProvider>().loadTasks();
     context.read<HabitProvider>().loadHabits();
+    context.read<PhotoNoteProvider>().loadPhotoNotes();
+  }
+
+  Future<void> _runSyncWithProgressDialog({
+    required BuildContext context,
+    required SyncProvider syncProvider,
+    required bool isRestore,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return Consumer<SyncProvider>(
+          builder: (context, sync, child) {
+            final progressText = sync.imageProgress.isNotEmpty
+                ? sync.imageProgress
+                : (isRestore ? 'Verileriniz buluttan indiriliyor...' : 'Verileriniz buluta yedekleniyor...');
+
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(color: AppTheme.neonBlue.withValues(alpha: 0.4), width: 1.5),
+              ),
+              content: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppTheme.neonBlue.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isRestore ? Icons.cloud_download_rounded : Icons.cloud_upload_rounded,
+                        size: 36,
+                        color: AppTheme.neonBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      isRestore ? 'Yedekten Geri Yükleniyor' : 'Buluta Yedekleniyor',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      progressText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.neonBlue,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: LinearProgressIndicator(
+                        minHeight: 6,
+                        backgroundColor: Colors.white10,
+                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.neonBlue),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Lütfen işlem tamamlanana kadar uygulamayı kapatmayın.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppTheme.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final success = isRestore
+        ? await syncProvider.restoreFromCloud()
+        : await syncProvider.backupToCloud();
+
+    if (context.mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+    }
+
+    if (context.mounted) {
+      if (success) {
+        if (isRestore) _refreshAllProviders(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isRestore ? 'Verileriniz başarıyla geri yüklendi!' : 'Verileriniz başarıyla buluta yedeklendi!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(syncProvider.syncError ?? (isRestore ? 'Geri yükleme başarısız oldu.' : 'Yedekleme başarısız oldu.')),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 8),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showRestoreConfirmation(BuildContext context, SyncProvider syncProvider) async {
@@ -64,26 +182,12 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
 
-    if (confirmed == true) {
-      final success = await syncProvider.restoreFromCloud();
-      if (context.mounted) {
-        if (success) {
-          _refreshAllProviders(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Verileriniz başarıyla geri yüklendi!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(syncProvider.syncError ?? 'Geri yükleme başarısız oldu.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
-      }
+    if (confirmed == true && context.mounted) {
+      await _runSyncWithProgressDialog(
+        context: context,
+        syncProvider: syncProvider,
+        isRestore: true,
+      );
     }
   }
 
@@ -639,27 +743,148 @@ class SettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF14B8A6),
+                          side: const BorderSide(color: Color(0xFF14B8A6), width: 1.2),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                        ),
+                        icon: const Icon(Icons.add_to_drive_rounded, size: 18),
+                        label: const Text('Görsel Yedeği İçin Google Drive İznini Bağla', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          final success = await syncProvider.signInWithGoogle();
+                          if (context.mounted) {
+                            if (success) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Google Drive izni başarıyla bağlandı!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            } else if (syncProvider.syncError != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(syncProvider.syncError!),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.md),
                     const Divider(color: Colors.white12, height: 1),
                     const SizedBox(height: AppSpacing.md),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Column(
                       children: [
-                        const AppText(
-                          'Son Yedekleme:',
-                          styleType: AppTextStyleType.caption,
-                          color: Colors.grey,
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const AppText(
+                              'Son Yedekleme Tarihi:',
+                              styleType: AppTextStyleType.caption,
+                              color: Colors.grey,
+                            ),
+                            AppText(
+                              syncProvider.lastBackupTime != null
+                                  ? _formatDateTime(syncProvider.lastBackupTime!)
+                                  : 'Hiç yedek alınmadı',
+                              styleType: AppTextStyleType.caption,
+                              styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                              color: AppColors.glow,
+                            ),
+                          ],
                         ),
-                        AppText(
-                          syncProvider.lastBackupTime != null
-                              ? _formatDateTime(syncProvider.lastBackupTime!)
-                              : 'Hiç yedek alınmadı',
-                          styleType: AppTextStyleType.caption,
-                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
-                          color: AppColors.glow,
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const AppText(
+                              'Yedekleyen Cihaz:',
+                              styleType: AppTextStyleType.caption,
+                              color: Colors.grey,
+                            ),
+                            AppText(
+                              syncProvider.lastBackupDevice != null && syncProvider.lastBackupDevice!.isNotEmpty
+                                  ? syncProvider.lastBackupDevice!
+                                  : (syncProvider.lastBackupTime != null ? 'Bilinmeyen Cihaz' : '-'),
+                              styleType: AppTextStyleType.caption,
+                              styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                              color: const Color(0xFF14B8A6),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const AppText(
+                              'Drive Bulut Klasörü:',
+                              styleType: AppTextStyleType.caption,
+                              color: Colors.grey,
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () async {
+                                  final url = syncProvider.driveFolderUrl ?? 'https://drive.google.com/';
+                                  final uri = Uri.parse(url);
+                                  try {
+                                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                  } catch (e) {
+                                    debugPrint('Launch Drive URL error: $e');
+                                  }
+                                },
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    const Icon(Icons.folder_open_rounded, size: 14, color: Color(0xFF38BDF8)),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'Google Drive / SmartNotebook_Backups',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF38BDF8),
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
+                    const SizedBox(height: AppSpacing.md),
+                    if (syncProvider.isSyncing && syncProvider.imageProgress.isNotEmpty) ...[
+                      const SizedBox(height: AppSpacing.sm),
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            child: AppText(
+                              syncProvider.imageProgress,
+                              styleType: AppTextStyleType.caption,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.md),
                     Row(
                       children: [
@@ -683,24 +908,11 @@ class SettingsScreen extends StatelessWidget {
                             onPressed: syncProvider.isSyncing
                                 ? null
                                 : () async {
-                                    final success = await syncProvider.backupToCloud();
-                                    if (context.mounted) {
-                                      if (success) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Verileriniz başarıyla buluta yedeklendi!'),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(syncProvider.syncError ?? 'Yedekleme başarısız oldu.'),
-                                            backgroundColor: Colors.redAccent,
-                                          ),
-                                        );
-                                      }
-                                    }
+                                    await _runSyncWithProgressDialog(
+                                      context: context,
+                                      syncProvider: syncProvider,
+                                      isRestore: false,
+                                    );
                                   },
                           ),
                         ),

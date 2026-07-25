@@ -19,6 +19,7 @@ import '../../../widgets/common/app_container.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../widgets/bounce_button.dart';
 import '../../widgets/floating_calculator.dart';
+import '../../widgets/floating_book_shortcut.dart';
 
 enum EditorMode { text, drawing, pan }
 
@@ -105,13 +106,16 @@ PaintContent? _parseJsonToContent(Map<String, dynamic> data) {
     case 'SimpleLine': return SimpleLine.fromJson(data);
     case 'CustomTextContent': return CustomTextContent.fromJson(data);
     case 'ArrowContent': return ArrowContent.fromJson(data);
+    case 'HighlighterContent': return HighlighterContent.fromJson(data);
     default: return null;
   }
 }
 
 class PageEditorScreen extends StatefulWidget {
   final String pageId;
-  const PageEditorScreen({super.key, required this.pageId});
+  /// Optional: if provided, all pages of the book are loaded (for PDF import multi-page support).
+  final String? bookId;
+  const PageEditorScreen({super.key, required this.pageId, this.bookId});
 
   @override
   State<PageEditorScreen> createState() => _PageEditorScreenState();
@@ -122,9 +126,10 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   bool _initialized = false;
   bool _hasChanges = false;
   bool _showCalculator = false;
+  bool _showShortcut = false;
   
   List<PageData> _pages = [PageData()];
-  EditorMode _currentMode = EditorMode.text;
+  EditorMode _currentMode = EditorMode.pan;
   
   Color _currentColor = Colors.black;
   double _currentStrokeWidth = 3.0;
@@ -136,6 +141,12 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   
   late PageController _pageController;
+  final TransformationController _transformationController = TransformationController();
+  TapDownDetails? _doubleTapDetails;
+  
+  /// When bookId is set, maps each _pages[i] to the corresponding NotePage.id
+  /// so we can save each page's drawingJson back to its own NotePage record.
+  List<String> _notePageIds = [];
 
   @override
   void initState() {
@@ -147,6 +158,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _transformationController.dispose();
     super.dispose();
   }
 
@@ -158,61 +170,125 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   void _init() {
     if (_initialized) return;
-    final page = context.read<PageProvider>().getPageById(widget.pageId);
-    if (page != null) {
-      _titleCtrl.text = page.title;
-      if (page.drawingJson != null && page.drawingJson!.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(page.drawingJson!);
-          if (decoded is Map && decoded.containsKey('pages')) {
-            final List<dynamic> pagesJson = decoded['pages'];
-            _pages = pagesJson.map((p) => PageData.fromJson(p)).toList();
+    _initialized = true;
+    
+    final pageProvider = context.read<PageProvider>();
+    
+    // If bookId is provided, load ALL pages of the book (for multi-page PDF support)
+    if (widget.bookId != null) {
+      final allPages = pageProvider.getPagesByBookId(widget.bookId!);
+      if (allPages.isNotEmpty) {
+        _titleCtrl.text = allPages.first.title;
+        _pages = [];
+        _notePageIds = [];
+        for (final notePage in allPages) {
+          _notePageIds.add(notePage.id);
+          if (notePage.drawingJson != null && notePage.drawingJson!.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(notePage.drawingJson!);
+              if (decoded is Map && decoded.containsKey('pages')) {
+                final List<dynamic> pagesJson = decoded['pages'];
+                // Each NotePage contributes its first internal page as one editor page
+                if (pagesJson.isNotEmpty) {
+                  _pages.add(PageData.fromJson(pagesJson.first as Map<String, dynamic>));
+                } else {
+                  _pages.add(PageData());
+                }
+              } else {
+                _pages.add(PageData());
+              }
+            } catch (e) {
+              debugPrint("Error loading page ${notePage.id}: $e");
+              _pages.add(PageData());
+            }
           } else {
-             // Fallback for empty or old format
-             _pages = [PageData()];
+            _pages.add(PageData());
           }
-        } catch (e) {
-          debugPrint("Error loading blocks: $e");
-          _pages = [PageData()];
+        }
+        if (_pages.isEmpty) _pages = [PageData()];
+      } else {
+        _pages = [PageData()];
+      }
+    } else {
+      // Single-page mode: load only the specified pageId
+      final page = pageProvider.getPageById(widget.pageId);
+      if (page != null) {
+        _titleCtrl.text = page.title;
+        if (page.drawingJson != null && page.drawingJson!.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(page.drawingJson!);
+            if (decoded is Map && decoded.containsKey('pages')) {
+              final List<dynamic> pagesJson = decoded['pages'];
+              _pages = pagesJson.map((p) => PageData.fromJson(p as Map<String, dynamic>)).toList();
+            } else {
+              _pages = [PageData()];
+            }
+          } catch (e) {
+            debugPrint("Error loading blocks: $e");
+            _pages = [PageData()];
+          }
         }
       }
     }
+    
     // Arka planlı sayfa varsa çizim modunda başla
     final firstPage = _pages.isNotEmpty ? _pages[0] : null;
     if (firstPage != null && firstPage.backgroundImageBase64 != null && firstPage.backgroundImageBase64!.isNotEmpty) {
-      _currentMode = EditorMode.drawing;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _applyDrawingToolToActivePage();
-      });
+      _currentMode = EditorMode.pan;
     }
-    _initialized = true;
   }
 
   Future<void> _save() async {
-    final List<Map<String, dynamic>> pagesJson = [];
-    for (var page in _pages) {
-      final pdJson = page.toJson();
-      try {
-        final imgData = await page.controller.getImageData();
-        if (imgData != null) {
-          final base64Image = base64Encode(imgData.buffer.asUint8List());
-          pdJson['imageData'] = base64Image;
+    final pageProvider = context.read<PageProvider>();
+    
+    if (widget.bookId != null && _notePageIds.isNotEmpty) {
+      // Multi-page mode: save each editor page back to its own NotePage record
+      for (int i = 0; i < _pages.length && i < _notePageIds.length; i++) {
+        final page = _pages[i];
+        final pdJson = page.toJson();
+        try {
+          final imgData = await page.controller.getImageData();
+          if (imgData != null) {
+            final base64Image = base64Encode(imgData.buffer.asUint8List());
+            pdJson['imageData'] = base64Image;
+          }
+        } catch (e) {
+          debugPrint("Error generating image for pdf page $i: $e");
         }
-      } catch (e) {
-        debugPrint("Error generating image for pdf: $e");
+        final newJson = jsonEncode({'pages': [pdJson]});
+        await pageProvider.updatePage(
+          _notePageIds[i],
+          title: i == 0 ? _titleCtrl.text : 'Sayfa ${i + 1}',
+          content: '',
+          drawingJson: newJson,
+          isAdvanced: true,
+        );
       }
-      pagesJson.add(pdJson);
+    } else {
+      // Single-page mode: save all internal pages to the single NotePage
+      final List<Map<String, dynamic>> pagesJson = [];
+      for (var page in _pages) {
+        final pdJson = page.toJson();
+        try {
+          final imgData = await page.controller.getImageData();
+          if (imgData != null) {
+            final base64Image = base64Encode(imgData.buffer.asUint8List());
+            pdJson['imageData'] = base64Image;
+          }
+        } catch (e) {
+          debugPrint("Error generating image for pdf: $e");
+        }
+        pagesJson.add(pdJson);
+      }
+      final newJson = jsonEncode({'pages': pagesJson});
+      await pageProvider.updatePage(
+        widget.pageId,
+        title: _titleCtrl.text,
+        content: '',
+        drawingJson: newJson,
+        isAdvanced: true,
+      );
     }
-    
-    final newJson = jsonEncode({'pages': pagesJson});
-    
-    await context.read<PageProvider>().updatePage(
-      widget.pageId,
-      title: _titleCtrl.text,
-      content: '',
-      drawingJson: newJson,
-      isAdvanced: true,
-    );
     setState(() => _hasChanges = false);
   }
 
@@ -396,6 +472,14 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         actions: [
           IconButton(
             icon: Icon(
+              _showShortcut ? Icons.style_rounded : Icons.style_outlined,
+              color: _showShortcut ? AppColors.glow : null,
+            ),
+            tooltip: 'Görsel & Bilgi Kartları',
+            onPressed: () => setState(() => _showShortcut = !_showShortcut),
+          ),
+          IconButton(
+            icon: Icon(
               _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
               color: _showCalculator ? AppColors.glow : null,
             ),
@@ -419,6 +503,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 Expanded(
                   child: PageView.builder(
                     controller: _pageController,
+                    scrollDirection: Axis.horizontal,
                     itemCount: _pages.length,
                     physics: _currentMode == EditorMode.drawing 
                         ? const NeverScrollableScrollPhysics() 
@@ -443,6 +528,11 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               FloatingCalculator(
                 onClose: () => setState(() => _showCalculator = false),
               ),
+            if (_showShortcut)
+              FloatingBookShortcut(
+                bookTitle: _titleCtrl.text.isEmpty ? 'Görsel & Bilgi Kartları' : _titleCtrl.text,
+                onClose: () => setState(() => _showShortcut = false),
+              ),
           ],
         ),
       ),
@@ -450,19 +540,38 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     );
   }
 
+  void _handleDoubleTap() {
+    if (_currentMode != EditorMode.pan) return;
+    
+    if (_transformationController.value != Matrix4.identity()) {
+      _transformationController.value = Matrix4.identity();
+    } else {
+      final position = _doubleTapDetails?.localPosition ?? Offset.zero;
+      _transformationController.value = Matrix4.identity()
+        ..translate(-position.dx * 1.5, -position.dy * 1.5)
+        ..scale(2.5);
+    }
+    setState(() {});
+  }
+
   Widget _buildPageFrame(int index) {
     final pageData = _pages[index];
     final isDrawingMode = _currentMode == EditorMode.drawing;
     final isTextMode = _currentMode == EditorMode.text;
     final hasBg = pageData.backgroundImageBase64 != null && pageData.backgroundImageBase64!.isNotEmpty;
+    final isPanMode = _currentMode == EditorMode.pan;
     
     return InteractiveViewer(
+      transformationController: _transformationController,
       minScale: 0.8,
       maxScale: 5.0,
-      panEnabled: true,
-      scaleEnabled: true,
+      clipBehavior: Clip.none,
+      panEnabled: isPanMode,
+      scaleEnabled: isPanMode,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onDoubleTapDown: (details) => _doubleTapDetails = details,
+        onDoubleTap: _handleDoubleTap,
         onTap: () {
           setState(() {
             _selectedTextBoxId = null;
@@ -596,16 +705,17 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         _pages[_activePageIndex].backgroundImageBase64!.isNotEmpty;
     
     int activePropertyIndex = 0;
-    bool showProperties = true;
     
     if (_selectedTextBoxId != null) {
       activePropertyIndex = 2; // TextBox properties
     } else if (_currentMode == EditorMode.drawing) {
       activePropertyIndex = 1; // Drawing properties
+    } else if (_currentMode == EditorMode.pan) {
+      activePropertyIndex = 3; // Pan / Move mode status toolbar
     } else if (!hasBg && _currentMode == EditorMode.text) {
       activePropertyIndex = 0; // Text properties
     } else {
-      showProperties = false;
+      activePropertyIndex = 3; // Default to Pan status bar so height is always constant
     }
     
     return Column(
@@ -616,38 +726,41 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         ),
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          height: showProperties ? 66 : 0,
-          margin: EdgeInsets.fromLTRB(16, 0, 16, showProperties ? 10 : 0),
-          child: showProperties
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(15),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.surface.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(AppRadius.large),
-                      border: Border.all(color: AppColors.textMuted.withOpacity(0.12)),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 10)],
-                    ),
-                    child: IndexedStack(
-                      index: activePropertyIndex,
-                      children: [
-                        _buildTextToolbarContent(),
-                        _buildDrawingToolbarContent(),
-                        _buildTextBoxToolbarContent(),
-                      ],
-                    ),
-                  ),
-                )
-              : const SizedBox.shrink(),
+          height: 66,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(15),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withOpacity(0.95),
+                borderRadius: BorderRadius.circular(AppRadius.large),
+                border: Border.all(color: AppColors.textMuted.withOpacity(0.12)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 10)],
+              ),
+              child: IndexedStack(
+                index: activePropertyIndex,
+                children: [
+                  _buildTextToolbarContent(),
+                  _buildDrawingToolbarContent(),
+                  _buildTextBoxToolbarContent(),
+                  _buildPanToolbarContent(),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
+  Widget _buildPanToolbarContent() {
+    return const SizedBox.shrink();
+  }
+
   Widget _buildMainToolbar({bool hasBg = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.surface.withOpacity(0.95),
         borderRadius: BorderRadius.circular(30),
@@ -658,20 +771,16 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _ToolbarAction(
-            icon: Icons.text_fields, 
-            label: 'Metin', 
-            onTap: hasBg ? () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Arka planı olan sayfalarda ana metin aracı kullanılamaz.'), duration: Duration(seconds: 2)),
-              );
-            } : () {
+            icon: Icons.pan_tool_rounded, 
+            label: 'Hareket', 
+            active: _currentMode == EditorMode.pan,
+            onTap: () {
               setState(() {
                 _selectedTextBoxId = null;
                 _selectedImageId = null;
-                _currentMode = EditorMode.text;
+                _currentMode = EditorMode.pan;
               });
             },
-            active: _currentMode == EditorMode.text && !hasBg,
           ),
           const VerticalDivider(),
           _ToolbarAction(
@@ -682,13 +791,26 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                   _selectedTextBoxId = null;
                   _selectedImageId = null;
                   _currentMode = EditorMode.drawing;
-                  if (_activeTool == 'Eraser' || _activeTool == 'AreaEraser') {
-                    _activeTool = 'SmoothLine';
-                  }
+                  _activeTool = 'SmoothLine';
                   _applyDrawingToolToActivePage();
                });
             },
-            active: _currentMode == EditorMode.drawing && _activeTool != 'Eraser' && _activeTool != 'AreaEraser',
+            active: _currentMode == EditorMode.drawing && _activeTool == 'SmoothLine',
+          ),
+          const VerticalDivider(),
+          _ToolbarAction(
+            icon: Icons.border_color_rounded, 
+            label: 'Fosforlu', 
+            onTap: () {
+               setState(() {
+                  _selectedTextBoxId = null;
+                  _selectedImageId = null;
+                  _currentMode = EditorMode.drawing;
+                  _activeTool = 'Highlighter';
+                  _applyDrawingToolToActivePage();
+               });
+            },
+            active: _currentMode == EditorMode.drawing && _activeTool == 'Highlighter',
           ),
           const VerticalDivider(),
           _ToolbarAction(
@@ -708,21 +830,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           const VerticalDivider(),
           _ToolbarAction(
             icon: Icons.add_photo_alternate, 
-            label: 'Resim', 
+            label: '+Resim', 
             onTap: _pickImage,
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.pan_tool_rounded, 
-            label: 'Hareket', 
-            active: _currentMode == EditorMode.pan,
-            onTap: () {
-              setState(() {
-                _selectedTextBoxId = null;
-                _selectedImageId = null;
-                _currentMode = EditorMode.pan;
-              });
-            },
           ),
         ],
       ),
@@ -738,6 +847,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
       debugPrint('Color: $_currentColor');
       
       if (_activeTool == 'SmoothLine') controller.setPaintContent(SmoothLine());
+      else if (_activeTool == 'Highlighter') controller.setPaintContent(HighlighterContent());
       else if (_activeTool == 'Rectangle') controller.setPaintContent(Rectangle());
       else if (_activeTool == 'Circle') controller.setPaintContent(Circle());
       else if (_activeTool == 'StraightLine') controller.setPaintContent(StraightLine());
@@ -747,6 +857,9 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
       
       if (_activeTool == 'AreaEraser') {
         controller.setStyle(color: Colors.red.withValues(alpha: 0.3), strokeWidth: 2.0);
+      } else if (_activeTool == 'Highlighter') {
+        final highlighterWidth = (_currentStrokeWidth * 3.5).clamp(8.0, 60.0);
+        controller.setStyle(color: _currentColor.withValues(alpha: 0.38), strokeWidth: highlighterWidth);
       } else {
         controller.setStyle(color: _currentColor, strokeWidth: _currentStrokeWidth);
       }
@@ -1325,17 +1438,25 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           // Stroke Width Slider
           SizedBox(
             width: 100,
-            child: Slider(
-              value: _currentStrokeWidth,
-              min: 1.0,
-              max: 20.0,
-              activeColor: Theme.of(context).primaryColor,
-              onChanged: (val) {
-                setState(() {
-                  _currentStrokeWidth = val;
-                  _applyDrawingToolToActivePage();
-                });
-              },
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: Colors.white,
+                inactiveTrackColor: Colors.white.withOpacity(0.3),
+                thumbColor: Colors.white,
+                overlayColor: Colors.white.withOpacity(0.2),
+                trackHeight: 3.0,
+              ),
+              child: Slider(
+                value: _currentStrokeWidth,
+                min: 1.0,
+                max: 20.0,
+                onChanged: (val) {
+                  setState(() {
+                    _currentStrokeWidth = val;
+                    _applyDrawingToolToActivePage();
+                  });
+                },
+              ),
             ),
           ),
           const VerticalDivider(),
@@ -1658,4 +1779,82 @@ class ArrowContent extends PaintContent {
     ..end = end
     ..paint.color = paint.color
     ..paint.strokeWidth = paint.strokeWidth;
+}
+
+class HighlighterContent extends PaintContent {
+  final List<Offset> points = [];
+
+  HighlighterContent() : super.paint(Paint());
+
+  HighlighterContent.fromJson(Map<String, dynamic> data) : super.paint(Paint()) {
+    if (data['points'] is List) {
+      for (final p in data['points']) {
+        if (p is Map && p['x'] != null && p['y'] != null) {
+          points.add(Offset((p['x'] as num).toDouble(), (p['y'] as num).toDouble()));
+        }
+      }
+    }
+    if (data['color'] != null) {
+      paint.color = Color(data['color'] as int);
+    }
+    if (data['strokeWidth'] != null) {
+      paint.strokeWidth = (data['strokeWidth'] as num).toDouble();
+    }
+  }
+
+  @override
+  void draw(Canvas canvas, Size size, bool deeper) {
+    if (points.isEmpty) return;
+
+    final drawWidth = paint.strokeWidth > 0 ? paint.strokeWidth : 18.0;
+    final drawPaint = Paint()
+      ..color = paint.color.withValues(alpha: 0.38)
+      ..strokeWidth = drawWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.square
+      ..strokeJoin = StrokeJoin.bevel;
+
+    if (points.length == 1) {
+      canvas.drawCircle(points.first, drawWidth / 2, drawPaint..style = PaintingStyle.fill);
+      return;
+    }
+
+    final path = Path();
+    path.moveTo(points.first.dx, points.first.dy);
+    for (int i = 1; i < points.length; i++) {
+      final p0 = points[i - 1];
+      final p1 = points[i];
+      path.quadraticBezierTo(p0.dx, p0.dy, (p0.dx + p1.dx) / 2, (p0.dy + p1.dy) / 2);
+    }
+
+    canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
+    canvas.drawPath(path, drawPaint);
+    canvas.restore();
+  }
+
+  @override
+  void drawing(Offset nowPoint) => points.add(nowPoint);
+
+  @override
+  void startDraw(Offset startPoint) => points.add(startPoint);
+
+  @override
+  Map<String, dynamic> toContentJson() => toJson();
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'HighlighterContent',
+    'points': points.map((p) => {'x': p.dx, 'y': p.dy}).toList(),
+    'color': paint.color.value,
+    'strokeWidth': paint.strokeWidth,
+  };
+
+  @override
+  HighlighterContent copy() {
+    final newContent = HighlighterContent();
+    newContent.points.addAll(points);
+    newContent.paint.color = paint.color;
+    newContent.paint.strokeWidth = paint.strokeWidth;
+    return newContent;
+  }
 }

@@ -215,6 +215,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     final existingNote = PhotoNote.fromMap(rawData);
     final directory = await getApplicationDocumentsDirectory();
     final List<String> newPaths = List<String>.from(existingNote.imagePaths);
+    final List<String> newNotes = List<String>.from(existingNote.imageNotes);
 
     for (var i = 0; i < imageFiles.length; i++) {
       final file = imageFiles[i];
@@ -223,10 +224,12 @@ class PhotoNoteProvider extends ChangeNotifier {
       final targetPath = '${directory.path}/photonote_${noteId}_${timeStamp}_$i.$ext';
       final saved = await file.copy(targetPath);
       newPaths.add(saved.path);
+      newNotes.add('');
     }
 
     final updatedNote = existingNote.copyWith(
       imagePaths: newPaths,
+      imageNotes: newNotes,
       updatedAt: DateTime.now(),
     );
 
@@ -242,10 +245,14 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     final existingNote = PhotoNote.fromMap(rawData);
     final paths = List<String>.from(existingNote.imagePaths);
+    final notes = List<String>.from(existingNote.imageNotes);
 
     if (imageIndex < 0 || imageIndex >= paths.length) return;
 
     final removedPath = paths.removeAt(imageIndex);
+    if (imageIndex < notes.length) {
+      notes.removeAt(imageIndex);
+    }
     try {
       final file = File(removedPath);
       if (await file.exists()) {
@@ -263,6 +270,34 @@ class PhotoNoteProvider extends ChangeNotifier {
     final updatedNote = existingNote.copyWith(
       imagePath: paths.first,
       imagePaths: paths,
+      imageNotes: notes,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Update note text for a specific image index in a photo note
+  Future<void> updateImageNote(String noteId, int imageIndex, String noteText) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final notes = List<String>.from(existingNote.imageNotes);
+
+    while (notes.length < existingNote.imagePaths.length) {
+      notes.add('');
+    }
+
+    if (imageIndex >= 0 && imageIndex < notes.length) {
+      notes[imageIndex] = noteText.trim();
+    }
+
+    final updatedNote = existingNote.copyWith(
+      imageNotes: notes,
+      note: imageIndex == 0 ? noteText.trim() : existingNote.note,
       updatedAt: DateTime.now(),
     );
 

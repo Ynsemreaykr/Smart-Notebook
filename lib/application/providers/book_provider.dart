@@ -157,10 +157,10 @@ class BookProvider extends ChangeNotifier {
     // 2. Read PDF bytes
     final bytes = await file.readAsBytes();
     
-    // 3. Rasterize PDF pages using Printing.raster
+    // 3. Rasterize PDF pages using Printing.raster (DPI 96 for high quality and fast backup)
     int pageIndex = 0;
     try {
-      await for (final page in Printing.raster(bytes, dpi: 150)) {
+      await for (final page in Printing.raster(bytes, dpi: 96)) {
         final pngBytes = await page.toPng();
         final b64 = base64Encode(pngBytes);
         

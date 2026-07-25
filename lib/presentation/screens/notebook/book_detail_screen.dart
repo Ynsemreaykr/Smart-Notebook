@@ -9,6 +9,7 @@ import '../../../domain/models/page.dart';
 import '../../widgets/page_tile.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/bounce_button.dart';
+import '../../widgets/floating_book_shortcut.dart';
 import 'page_editor_screen.dart';
 import 'book_reader_screen.dart';
 
@@ -26,6 +27,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   final Set<String> _selectedPageIds = {};
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  bool _showShortcut = false;
 
   @override
   void initState() {
@@ -41,14 +43,20 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     super.dispose();
   }
 
-  Book? get _book => context.read<BookProvider>().getBookById(widget.bookId);
+  Book? get _book {
+    try {
+      return context.read<BookProvider>().books.firstWhere((b) => b.id == widget.bookId);
+    } catch (_) {
+      return null;
+    }
+  }
 
   void _addNewPage() {
     context.read<PageProvider>().addPage(widget.bookId, 'Yeni Sayfa', isAdvanced: true).then((page) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PageEditorScreen(pageId: page.id),
+          builder: (_) => PageEditorScreen(pageId: page.id, bookId: widget.bookId),
         ),
       ).then((_) {
         context.read<PageProvider>().loadPages(widget.bookId);
@@ -385,6 +393,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ] else ...[
               IconButton(
+                icon: Icon(
+                  Icons.bookmark_rounded,
+                  color: _showShortcut ? Colors.amber : null,
+                ),
+                tooltip: 'Hızlı Erişim',
+                onPressed: () => setState(() => _showShortcut = !_showShortcut),
+              ),
+              IconButton(
                 icon: const Icon(Icons.auto_stories),
                 tooltip: 'Kitabı Oku',
                 onPressed: () => _openReader(),
@@ -392,7 +408,9 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
             ]
           ],
         ),
-        body: pageProvider.isLoading
+        body: Stack(
+          children: [
+            pageProvider.isLoading
             ? const Center(child: CircularProgressIndicator())
             : pageProvider.pages.isEmpty
                 ? EmptyStateWidget(
@@ -552,6 +570,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                       ),
                     ],
                   ),
+            // FloatingBookShortcut overlay
+            if (_showShortcut)
+              FloatingBookShortcut(
+                bookTitle: _book?.title ?? 'Kitap',
+                onClose: () => setState(() => _showShortcut = false),
+              ),
+          ],
+        ),
         floatingActionButton: _isSelectionMode 
           ? null 
           : BounceButton(

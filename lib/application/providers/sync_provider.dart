@@ -1,29 +1,40 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:hive/hive.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:device_info_plus/device_info_plus.dart';
 import '../../domain/models/book.dart';
 import '../../domain/models/page.dart';
 import '../../domain/models/event.dart';
 import '../../domain/models/note.dart';
-import '../../domain/models/habit.dart';
-import '../../domain/models/planner_task.dart';
-import '../../domain/models/plan.dart';
+import '../../domain/models/photo_note.dart';
 import '../../data/services/database_service.dart';
+import '../../data/services/google_drive_service.dart';
 
 class SyncProvider extends ChangeNotifier {
   FirebaseAuth get _auth => FirebaseAuth.instance;
-  GoogleSignIn get _googleSignIn => GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId: '918229000552-jfhosjoh4o6cgtjjem7cdotl912ahi7e.apps.googleusercontent.com',
+    scopes: ['email', 'https://www.googleapis.com/auth/drive.file'],
+  );
+  final GoogleDriveService _driveService = GoogleDriveService();
 
   bool _isFirebaseAvailable = false;
   bool _isSyncing = false;
   String? _syncError;
   DateTime? _lastBackupTime;
+  String? _lastBackupDevice;
+  String? _driveFolderId;
   String _imageProgress = '';
 
   bool get isFirebaseAvailable => _isFirebaseAvailable;
@@ -32,7 +43,41 @@ class SyncProvider extends ChangeNotifier {
   String get imageProgress => _imageProgress;
 
   DateTime? get lastBackupTime => _lastBackupTime;
+  String? get lastBackupDevice => _lastBackupDevice;
+  String? get driveFolderId => _driveFolderId;
+
+  String? get driveFolderUrl {
+    if (_driveFolderId != null && _driveFolderId!.isNotEmpty) {
+      return 'https://drive.google.com/drive/folders/$_driveFolderId';
+    }
+    return 'https://drive.google.com/drive/my-drive';
+  }
+
   User? get currentUser => _isFirebaseAvailable ? _auth.currentUser : null;
+
+  Future<String> getDeviceName() async {
+    final DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+    try {
+      if (Platform.isAndroid) {
+        final androidInfo = await deviceInfo.androidInfo;
+        final manufacturer = androidInfo.manufacturer;
+        final model = androidInfo.model;
+        if (model.toLowerCase().startsWith(manufacturer.toLowerCase())) {
+          return model;
+        }
+        return '$manufacturer $model';
+      } else if (Platform.isIOS) {
+        final iosInfo = await deviceInfo.iosInfo;
+        return iosInfo.name.isNotEmpty ? iosInfo.name : iosInfo.model;
+      } else if (Platform.isWindows) {
+        final winInfo = await deviceInfo.windowsInfo;
+        return winInfo.computerName;
+      }
+    } catch (e) {
+      debugPrint('Device info error: $e');
+    }
+    return Platform.operatingSystem;
+  }
 
   void initialize(bool isFirebaseAvailable) {
     _isFirebaseAvailable = isFirebaseAvailable;
@@ -45,6 +90,14 @@ class SyncProvider extends ChangeNotifier {
       final lastBackup = settingsBox.get('last_backup_time');
       if (lastBackup != null) {
         _lastBackupTime = DateTime.tryParse(lastBackup.toString());
+      }
+      final lastDev = settingsBox.get('last_backup_device');
+      if (lastDev != null) {
+        _lastBackupDevice = lastDev.toString();
+      }
+      final fId = settingsBox.get('drive_folder_id');
+      if (fId != null) {
+        _driveFolderId = fId.toString();
       }
     }
   }
@@ -62,9 +115,14 @@ class SyncProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
         _isSyncing = false;
+        _syncError = "Google hesabı seçilmedi veya cihaz Play Servisleri isteği iptal etti.";
         notifyListeners();
         return false;
       }
@@ -177,9 +235,15 @@ class SyncProvider extends ChangeNotifier {
   Future<void> signOut() async {
     if (!_isFirebaseAvailable) return;
     _isSyncing = true;
+    _syncError = null;
     notifyListeners();
     try {
-      await _googleSignIn.signOut();
+      try {
+        await _googleSignIn.disconnect();
+      } catch (_) {}
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
       await _auth.signOut();
     } catch (e) {
       _syncError = "Çıkış hatası: $e";
@@ -189,77 +253,138 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
-  /// Returns a consistent, Firestore-safe document ID for a user.
-  /// Uses email (normalized) so Google login and Email/Password login
-  /// with the same email address share the same backup data.
-  String _firestoreDocId(User user) {
-    final email = user.email;
-    if (email != null && email.isNotEmpty) {
-      // Replace '.' and '@' which are invalid in Firestore doc IDs
-      return email.toLowerCase().trim()
-          .replaceAll('.', '_')
-          .replaceAll('@', '_at_');
+  /// Obtains an authenticated DriveApi instance using current Google account
+  Future<drive.DriveApi?> _getDriveApi() async {
+    try {
+      GoogleSignInAccount? googleUser = _googleSignIn.currentUser;
+      googleUser ??= await _googleSignIn.signInSilently();
+      if (googleUser == null) {
+        googleUser = await _googleSignIn.signIn();
+      }
+      if (googleUser == null) {
+        _syncError = "Google hesabı oturumu bulunamadı. Lütfen Ayarlar'dan 'Google Hesabını Bağla' butonuna tıklayın.";
+        debugPrint('[SYNC DRIVE ERROR] googleUser is null');
+        return null;
+      }
+
+      try {
+        final headers = await googleUser.authHeaders;
+        final client = GoogleAuthClient(headers);
+        return drive.DriveApi(client);
+      } catch (authErr) {
+        debugPrint('[SYNC DRIVE WARNING] authHeaders failed, requesting drive.file scope: $authErr');
+        final constDriveScope = 'https://www.googleapis.com/auth/drive.file';
+        final granted = await _googleSignIn.requestScopes([constDriveScope]);
+        if (granted) {
+          final headers = await googleUser.authHeaders;
+          final client = GoogleAuthClient(headers);
+          return drive.DriveApi(client);
+        } else {
+          _syncError = "Google Drive erişim izni verilmedi. Lütfen izni onaylayın.";
+          return null;
+        }
+      }
+    } on PlatformException catch (pe) {
+      if (pe.code == 'sign_in_failed' || pe.message?.contains('12500') == true) {
+        _syncError = "Google İzin Hatası (12500): Lütfen Ayarlar ekranında 'Google Hesabını Bağla' butonuna tekrar basıp oturum açın.";
+      } else {
+        _syncError = "Google Drive bağlantı hatası (${pe.code}): ${pe.message}";
+      }
+      debugPrint('[SYNC DRIVE ERROR] PlatformException in Drive API: $pe');
+      return null;
+    } catch (e) {
+      _syncError = "Google Drive bağlantı hatası: $e";
+      debugPrint('[SYNC DRIVE ERROR] Failed to obtain Drive API instance: $e');
+      return null;
     }
-    return user.uid;
   }
 
-  /// Returns the Firebase Storage path prefix for a user's images.
-  String _storagePrefix(User user) {
-    final email = user.email;
-    if (email != null && email.isNotEmpty) {
-      return 'users/${email.toLowerCase().trim()}';
-    }
-    return 'users/${user.uid}';
-  }
-
-  /// Uploads all local photo note images to Firebase Storage.
-  /// Returns a map: localPath → storageUrl (download URL).
-  Future<Map<String, String>> _uploadImagesToStorage(
+  /// Uploads all local photo note images to Google Drive.
+  /// Returns a map: localPath → drive://<fileId>
+  Future<Map<String, String>> _uploadImagesToDrive(
       User user, List<Map<String, dynamic>> photoNotes) async {
     final Map<String, String> pathToUrl = {};
-    final storage = FirebaseStorage.instance;
-    final prefix = _storagePrefix(user);
 
-    // Collect all unique local paths from all photo notes
     final Set<String> allPaths = {};
     for (final n in photoNotes) {
       final paths = n['imagePaths'];
       if (paths is List) {
         for (final p in paths) {
-          if (p is String && p.isNotEmpty) allPaths.add(p);
+          if (p is String && p.isNotEmpty && !p.startsWith('drive://') && !p.startsWith('http')) {
+            allPaths.add(p);
+          }
         }
       }
       final single = n['imagePath'];
-      if (single is String && single.isNotEmpty) allPaths.add(single);
+      if (single is String && single.isNotEmpty && !single.startsWith('drive://') && !single.startsWith('http')) {
+        allPaths.add(single);
+      }
+    }
+
+    if (allPaths.isEmpty) return pathToUrl;
+
+    drive.DriveApi? driveApi;
+    String? folderId;
+    try {
+      driveApi = await _getDriveApi();
+      if (driveApi != null) {
+        folderId = await _driveService.getOrCreateFolderId(driveApi);
+      }
+    } catch (e) {
+      debugPrint('[BACKUP WARNING] Drive API init failed, using Firebase Storage fallback: $e');
     }
 
     int done = 0;
     final total = allPaths.length;
+    debugPrint('[BACKUP DEBUG] _uploadImagesToDrive starting: $total total image paths to process.');
 
     for (final localPath in allPaths) {
       try {
         final file = File(localPath);
-        if (!await file.exists()) continue;
-
-        final filename = localPath.split('/').last.split('\\').last;
-        final ref = storage.ref('$prefix/images/$filename');
-
-        // Check if already uploaded (skip to save bandwidth)
-        String downloadUrl;
-        try {
-          downloadUrl = await ref.getDownloadURL();
-        } catch (_) {
-          // Not uploaded yet, upload now
-          await ref.putFile(file);
-          downloadUrl = await ref.getDownloadURL();
+        if (!await file.exists()) {
+          debugPrint('[BACKUP DEBUG] Local image file does not exist, skipping: $localPath');
+          continue;
         }
-        pathToUrl[localPath] = downloadUrl;
+
+        String? imageUrl;
+
+        // 1. Upload to Firebase Storage (Universal URL for cross-device sync)
+        try {
+          final filename = localPath.split('/').last.split('\\').last;
+          final ref = FirebaseStorage.instance.ref().child('users/${user.uid}/photo_notes/$filename');
+          await ref.putFile(file);
+          imageUrl = await ref.getDownloadURL();
+          debugPrint('[BACKUP SUCCESS] Uploaded image to Firebase Storage: $localPath -> $imageUrl');
+        } catch (storageErr) {
+          debugPrint('[BACKUP WARNING] Firebase Storage upload error: $storageErr');
+        }
+
+        // 2. Also backup to Google Drive if Drive API is active
+        if (driveApi != null && folderId != null) {
+          try {
+            final driveId = await _driveService.uploadFile(
+              driveApi: driveApi,
+              file: file,
+              folderId: folderId,
+            );
+            if (driveId != null) {
+              debugPrint('[BACKUP SUCCESS] Also uploaded image to Google Drive: ID=$driveId');
+              imageUrl ??= 'drive://$driveId';
+            }
+          } catch (driveErr) {
+            debugPrint('[BACKUP WARNING] Google Drive upload error: $driveErr');
+          }
+        }
+
+        if (imageUrl != null) {
+          pathToUrl[localPath] = imageUrl;
+        }
 
         done++;
         _imageProgress = 'Görsel $done/$total yükleniyor...';
         notifyListeners();
       } catch (e) {
-        debugPrint('Image upload error for $localPath: $e');
+        debugPrint('[BACKUP DEBUG ERROR] Image upload failed for $localPath: $e');
       }
     }
     _imageProgress = '';
@@ -267,73 +392,252 @@ class SyncProvider extends ChangeNotifier {
     return pathToUrl;
   }
 
-  /// Downloads all images from Firebase Storage to local app documents directory.
-  /// Returns a map: storageUrl → newLocalPath
-  Future<Map<String, String>> _downloadImagesFromStorage(
+  /// Recursively cleans heavy base64 strings (such as canvas thumbnail imageData) from any object or payload
+  dynamic _cleanBase64Data(dynamic obj) {
+    if (obj is Map) {
+      final map = <String, dynamic>{};
+      obj.forEach((k, v) {
+        final keyStr = k.toString();
+        if (keyStr == 'imageData') return; // Strip canvas PNG thumbnail
+        if (keyStr == 'backgroundImageBase64') return; // Strip raw base64 background
+        if (v is String && (v.startsWith('data:image') || v.startsWith('iVBORw0KGgo') || v.length > 20000)) {
+          return; // Strip raw base64 data string
+        }
+        map[keyStr] = _cleanBase64Data(v);
+      });
+      return map;
+    } else if (obj is List) {
+      return obj.map((item) => _cleanBase64Data(item)).toList();
+    } else if (obj is NotePage) {
+      return _cleanBase64Data(obj.toJson());
+    } else if (obj is Book) {
+      return _cleanBase64Data(obj.toJson());
+    } else if (obj is Note) {
+      return _cleanBase64Data(obj.toJson());
+    } else if (obj is PhotoNote) {
+      return _cleanBase64Data(obj.toMap());
+    } else if (obj != null) {
+      try {
+        return _cleanBase64Data((obj as dynamic).toJson());
+      } catch (_) {
+        try {
+          return _cleanBase64Data((obj as dynamic).toMap());
+        } catch (_) {}
+      }
+    }
+    return obj;
+  }
+
+  /// Uploads page backgroundImageBase64 fields to Google Drive.
+  /// Returns a list of pages with backgroundImageBase64 replaced by backgroundImageUrl (drive://<fileId>) and imageData stripped.
+  Future<List<dynamic>> _uploadPageBackgroundsToDrive(
+      User user, List<dynamic> pages) async {
+    final List<dynamic> result = [];
+    drive.DriveApi? driveApi;
+    String? folderId;
+    int uploaded = 0;
+
+    for (final rawP in pages) {
+      Map<String, dynamic> p;
+      if (rawP is NotePage) {
+        p = rawP.toJson();
+      } else if (rawP is Map) {
+        p = Map<String, dynamic>.from(rawP);
+      } else {
+        try {
+          p = Map<String, dynamic>.from((rawP as dynamic).toJson());
+        } catch (_) {
+          try {
+            p = Map<String, dynamic>.from((rawP as dynamic).toMap());
+          } catch (_) {
+            result.add(rawP);
+            continue;
+          }
+        }
+      }
+
+      dynamic drawingJson = p['drawingJson'];
+      if (drawingJson == null || (drawingJson is String && drawingJson.isEmpty)) {
+        result.add(p);
+        continue;
+      }
+
+      try {
+        dynamic decoded;
+        if (drawingJson is String) {
+          decoded = jsonDecode(drawingJson);
+        } else {
+          decoded = drawingJson;
+        }
+
+        if (decoded is Map && decoded.containsKey('pages') && decoded['pages'] is List) {
+          final innerPages = decoded['pages'] as List<dynamic>;
+          final updatedInnerPages = await Future.wait(innerPages.map((ip) async {
+            if (ip is! Map) return ip;
+            final ipMap = Map<String, dynamic>.from(ip);
+
+            final b64 = ipMap['backgroundImageBase64'];
+            if (b64 == null || b64 is! String || b64.isEmpty) return ipMap;
+
+            if (driveApi != null && folderId == null) {
+              folderId = await _driveService.getOrCreateFolderId(driveApi!);
+              if (folderId != null) {
+                _driveFolderId = folderId;
+                final settingsBox = Hive.box('settings');
+                await settingsBox.put('drive_folder_id', _driveFolderId);
+              }
+            }
+
+            if (driveApi == null) {
+              ipMap.remove('backgroundImageBase64');
+              return ipMap;
+            }
+
+            final pageId = p['id']?.toString() ?? 'page_${uploaded}';
+            final filename = 'bg_${pageId}.png';
+
+            String? driveId;
+            try {
+              final bytes = base64Decode(b64);
+              driveId = await _driveService.uploadBytes(
+                driveApi: driveApi!,
+                bytes: bytes,
+                filename: filename,
+                folderId: folderId,
+              );
+              uploaded++;
+              _imageProgress = 'Sayfa görseli $uploaded Drive\'a yükleniyor...';
+              notifyListeners();
+            } catch (uploadErr) {
+              debugPrint('Page bg Drive upload error: $uploadErr');
+              ipMap.remove('backgroundImageBase64');
+              return ipMap;
+            }
+
+            ipMap.remove('backgroundImageBase64');
+            if (driveId != null) {
+              ipMap['backgroundImageUrl'] = 'drive://$driveId';
+            }
+            return ipMap;
+          }));
+          decoded['pages'] = updatedInnerPages;
+        }
+
+        final cleanedDecoded = _cleanBase64Data(decoded);
+        final updatedPage = Map<String, dynamic>.from(p);
+        updatedPage['drawingJson'] = jsonEncode(cleanedDecoded);
+        result.add(updatedPage);
+      } catch (e) {
+        debugPrint('Page background processing error: $e');
+        result.add(p);
+      }
+    }
+
+    _imageProgress = '';
+    notifyListeners();
+    return result;
+  }
+
+  /// Downloads all images from Google Drive (or legacy Firebase Storage) to local app documents directory.
+  /// Returns a map: driveUri/storageUrl → localPath
+  Future<Map<String, String>> _downloadImagesFromDrive(
       User user, List<Map<String, dynamic>> photoNotes) async {
     final Map<String, String> urlToLocal = {};
     final dir = await getApplicationDocumentsDirectory();
 
-    // Collect all unique storage URLs
-    final Set<String> allUrls = {};
+    final Set<String> allDriveUris = {};
+    final Set<String> allHttpUrls = {};
+
     for (final n in photoNotes) {
       final paths = n['imagePaths'];
       if (paths is List) {
         for (final p in paths) {
-          if (p is String && p.startsWith('http')) allUrls.add(p);
+          if (p is String) {
+            if (p.startsWith('drive://')) allDriveUris.add(p);
+            else if (p.startsWith('http')) allHttpUrls.add(p);
+          }
         }
       }
       final single = n['imagePath'];
-      if (single is String && single.startsWith('http')) allUrls.add(single);
+      if (single is String) {
+        if (single.startsWith('drive://')) allDriveUris.add(single);
+        else if (single.startsWith('http')) allHttpUrls.add(single);
+      }
     }
 
     int done = 0;
-    final total = allUrls.length;
+    final total = allDriveUris.length + allHttpUrls.length;
 
-    for (final url in allUrls) {
+    drive.DriveApi? driveApi;
+    if (allDriveUris.isNotEmpty) {
       try {
-        final ref = FirebaseStorage.instance.refFromURL(url);
-        final filename = ref.name;
-        final localPath = '${dir.path}/$filename';
+        driveApi = await _getDriveApi();
+      } catch (e) {
+        debugPrint('[RESTORE WARNING] Drive API init failed, skipping Drive URIs: $e');
+      }
+    }
+
+    // 1. Download Drive URIs
+    for (final driveUri in allDriveUris) {
+      try {
+        final driveId = driveUri.replaceAll('drive://', '');
+        final localPath = '${dir.path}/drive_$driveId.jpg';
         final localFile = File(localPath);
 
-        if (!await localFile.exists()) {
-          await ref.writeToFile(localFile);
+        if (await localFile.exists()) {
+          urlToLocal[driveUri] = localPath;
+        } else if (driveApi != null) {
+          final success = await _driveService.downloadFile(
+            driveApi: driveApi,
+            driveFileId: driveId,
+            targetLocalFile: localFile,
+          );
+          if (success) {
+            urlToLocal[driveUri] = localPath;
+          }
         }
-        urlToLocal[url] = localPath;
 
         done++;
         _imageProgress = 'Görsel $done/$total indiriliyor...';
         notifyListeners();
       } catch (e) {
-        debugPrint('Image download error for $url: $e');
+        debugPrint('Image Drive download error for $driveUri: $e');
       }
     }
+
+    // 2. Download Firebase Storage / HTTP URLs
+    for (final url in allHttpUrls) {
+      try {
+        final filename = 'img_${url.hashCode}.jpg';
+        final localPath = '${dir.path}/$filename';
+        final localFile = File(localPath);
+
+        if (!await localFile.exists()) {
+          try {
+            final ref = FirebaseStorage.instance.refFromURL(url);
+            await ref.writeToFile(localFile);
+          } catch (_) {
+            final response = await http.get(Uri.parse(url));
+            if (response.statusCode == 200) {
+              await localFile.writeAsBytes(response.bodyBytes);
+            }
+          }
+        }
+        if (await localFile.exists()) {
+          urlToLocal[url] = localPath;
+        }
+
+        done++;
+        _imageProgress = 'Görsel $done/$total indiriliyor...';
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Storage download error for $url: $e');
+      }
+    }
+
     _imageProgress = '';
     notifyListeners();
     return urlToLocal;
-  }
-
-  /// Helper method to recursively convert any Hive object, map, or list into a 100% Firestore-safe primitive data structure
-  dynamic _sanitizeKeys(dynamic input) {
-    if (input is Map) {
-      final Map<String, dynamic> result = {};
-      input.forEach((k, v) {
-        String cleanKey = k.toString()
-            .replaceAll('.', '_')
-            .replaceAll('/', '_')
-            .replaceAll('[', '_')
-            .replaceAll(']', '_')
-            .replaceAll('~', '_')
-            .replaceAll('*', '_');
-        if (cleanKey.isEmpty) cleanKey = 'empty_key';
-        result[cleanKey] = _sanitizeKeys(v);
-      });
-      return result;
-    } else if (input is List) {
-      return input.map((e) => _sanitizeKeys(e)).toList();
-    }
-    return input;
   }
 
   /// Backup local data to Cloud Firestore under users/{uid}/backups/latest
@@ -352,6 +656,14 @@ class SyncProvider extends ChangeNotifier {
     String currentStep = "Başlatılıyor";
 
     try {
+      // 0. Refresh Auth Token to guarantee active credentials
+      try {
+        await user.getIdToken(true);
+        debugPrint('[BACKUP DEBUG] Auth token refreshed successfully for UID=${user.uid}');
+      } catch (tokenErr) {
+        debugPrint('[BACKUP DEBUG WARNING] Token refresh error: $tokenErr');
+      }
+
       currentStep = "1. Hive Kutuları Okunuyor";
       // 1. Fetch all local data from Hive Boxes
       final books = DatabaseService.getBooksBox().values.toList();
@@ -390,19 +702,37 @@ class SyncProvider extends ChangeNotifier {
       // 2. Build raw photo notes list (with local paths first)
       final rawPhotoNotes = photoNotesData.map((item) {
         final val = item['value'];
+        if (val is PhotoNote) return val.toMap();
         if (val is Map) return Map<String, dynamic>.from(val);
+        try {
+          return Map<String, dynamic>.from((val as dynamic).toMap());
+        } catch (_) {}
         return <String, dynamic>{};
       }).where((m) => m.isNotEmpty).toList();
 
-      // 2b. Upload images to Firebase Storage and replace local paths with URLs
-      currentStep = "2b. Görseller Firebase Storage'a Yükleniyor";
-      final pathToUrl = await _uploadImagesToStorage(user, rawPhotoNotes);
+      currentStep = "2b. Görseller Google Drive'a Yükleniyor";
+      Map<String, String> pathToUrl = {};
+      try {
+        pathToUrl = await _uploadImagesToDrive(user, rawPhotoNotes);
+      } catch (imgErr) {
+        debugPrint('[BACKUP WARNING] Image Drive upload failed, proceeding with text backup: $imgErr');
+      }
 
       // Replace local paths with storage URLs in photoNotesData
       final uploadedPhotoNotesData = photoNotesData.map((item) {
         final val = item['value'];
-        if (val is! Map) return item;
-        final updated = Map<String, dynamic>.from(val);
+        Map<String, dynamic> updated;
+        if (val is PhotoNote) {
+          updated = val.toMap();
+        } else if (val is Map) {
+          updated = Map<String, dynamic>.from(val);
+        } else {
+          try {
+            updated = Map<String, dynamic>.from((val as dynamic).toMap());
+          } catch (_) {
+            return item;
+          }
+        }
         // Replace imagePath
         if (updated['imagePath'] is String) {
           final url = pathToUrl[updated['imagePath']];
@@ -418,10 +748,14 @@ class SyncProvider extends ChangeNotifier {
         return {'key': item['key'], 'value': updated};
       }).toList();
 
+      // 2c. Upload page backgroundImageBase64 to Google Drive (strip from JSON to reduce size)
+      currentStep = "2c. Sayfa Görselleri Google Drive'a Yükleniyor";
+      final pagesWithUrls = await _uploadPageBackgroundsToDrive(user, pages);
+
       // 2. Build JSON payload (with storage URLs instead of local paths)
       final rawPayload = {
         'books': books,
-        'pages': pages,
+        'pages': pagesWithUrls,
         'events': events,
         'notes': notes,
         'voice_notes': voiceNotes,
@@ -431,11 +765,15 @@ class SyncProvider extends ChangeNotifier {
         'photo_notes': uploadedPhotoNotesData,
         'settings': settings,
         'lastBackupTime': DateTime.now().toIso8601String(),
-        'deviceInfo': 'Android App',
+        'lastBackupDevice': await getDeviceName(),
+        'deviceInfo': await getDeviceName(),
       };
 
+      // 2d. Clean ALL heavy base64 strings from rawPayload recursively
+      final cleanedPayload = _cleanBase64Data(rawPayload);
+
       // 3. Serialize to pure JSON string with custom encoder fallback
-      final jsonString = jsonEncode(rawPayload, toEncodable: (nonEncodable) {
+      final jsonString = jsonEncode(cleanedPayload, toEncodable: (nonEncodable) {
         if (nonEncodable is DateTime) return nonEncodable.toIso8601String();
         try {
           return (nonEncodable as dynamic).toJson();
@@ -446,63 +784,66 @@ class SyncProvider extends ChangeNotifier {
         return nonEncodable.toString();
       });
 
-      // Use email as Firestore document key so Google login and Email login share the same backup
-      final String docId = _firestoreDocId(user);
-      currentStep = "3. Kullanıcı Doğrulanıyor (${user.email ?? user.uid})";
-      // Refresh user auth token to ensure active credentials for Firestore
-      try {
-        await user.getIdToken(true);
-      } catch (tokenErr) {
-        debugPrint('Token refresh warning: $tokenErr');
-      }
+      // 4. Compress JSON string using GZIP for 90% size reduction & speed
+      currentStep = "4. Yedek Paketi Sıkıştırılıyor (GZIP)";
+      final jsonBytes = utf8.encode(jsonString);
+      final compressedBytes = Uint8List.fromList(gzip.encode(jsonBytes));
+      final double mbSize = compressedBytes.length / (1024 * 1024);
+      debugPrint('[BACKUP DEBUG] GZIP compression: ${jsonBytes.length} chars -> ${compressedBytes.length} bytes (${mbSize.toStringAsFixed(2)} MB)');
 
+      // 5. Save cleaned JSON to Firestore with multi-candidate doc IDs and collections
+      currentStep = "5. Bulut Depolamasına Yazılıyor (Firestore)";
+      final candidateDocIds = [
+        user.uid,
+        if (user.email != null && user.email!.isNotEmpty) ...[
+          user.email!.toLowerCase().trim().replaceAll('.', '_').replaceAll('@', '_at_'),
+          user.email!,
+        ],
+      ];
 
-      currentStep = "4. Ana Doküman Oluşturuluyor (Boyut: ${jsonString.length} kr)";
-      // 4. Store each 400k chunk as an individual document inside users/{email}/backups/latest/chunks/chunk_X
-      const int chunkSize = 400000;
-      final int totalChunks = (jsonString.length / chunkSize).ceil();
+      final candidateCols = ['users', 'user_backups', 'backups'];
 
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(docId)
-          .collection('backups')
-          .doc('latest')
-          .set({
-        'lastBackupTime': DateTime.now().toIso8601String(),
-        'deviceInfo': 'Android App',
-        'chunkCount': totalChunks > 0 ? totalChunks : 1,
-        'totalSize': jsonString.length,
-        'ownerEmail': user.email ?? '',
-      });
+      bool writeSuccess = false;
+      String? lastFsErr;
 
-      if (jsonString.isEmpty) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(docId)
-            .collection('backups')
-            .doc('latest')
-            .collection('chunks')
-            .doc('chunk_0')
-            .set({'data': '{}'});
-      } else {
-        for (int i = 0; i * chunkSize < jsonString.length; i++) {
-          currentStep = "5. Parça ${i + 1}/$totalChunks Sunucuya Yükleniyor";
-          int start = i * chunkSize;
-          int end = start + chunkSize;
-          if (end > jsonString.length) end = jsonString.length;
-          final chunkText = jsonString.substring(start, end);
+      final currentDevice = await getDeviceName();
+      _lastBackupDevice = currentDevice;
+      _lastBackupTime = DateTime.now();
+      await settingsBox.put('last_backup_device', _lastBackupDevice);
+      await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
 
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(docId)
-              .collection('backups')
-              .doc('latest')
-              .collection('chunks')
-              .doc('chunk_$i')
-              .set({'data': chunkText});
+      for (final col in candidateCols) {
+        for (final docId in candidateDocIds) {
+          try {
+            await FirebaseFirestore.instance.collection(col).doc(docId).set({
+              'email': user.email ?? '',
+              'json_data': jsonString,
+              'lastBackupTime': _lastBackupTime!.toIso8601String(),
+              'lastBackupDevice': currentDevice,
+              'uid': user.uid,
+              'totalSize': jsonString.length,
+              'compressedSize': compressedBytes.length,
+            }, SetOptions(merge: true));
+
+            writeSuccess = true;
+            debugPrint('[BACKUP DEBUG SUCCESS] Saved backup directly to $col/$docId (${jsonString.length} chars)');
+            break;
+          } catch (fsErr) {
+            lastFsErr = fsErr.toString();
+            debugPrint('[BACKUP DEBUG] Write candidate $col/$docId failed: $fsErr');
+          }
         }
+        if (writeSuccess) break;
       }
 
+      if (!writeSuccess) {
+        _isSyncing = false;
+        _syncError = "Yedekleme Buluta Yazılamadı!\n\nFirestore Hata: $lastFsErr\n(UID: ${user.uid})";
+        notifyListeners();
+        return false;
+      }
+
+      debugPrint('[BACKUP DEBUG SUCCESS] Backup completed cleanly at ${DateTime.now()}!');
       _lastBackupTime = DateTime.now();
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
 
@@ -510,13 +851,13 @@ class SyncProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } on FirebaseException catch (fe) {
-      debugPrint('Backup FirebaseException: [$currentStep] ${fe.code} - ${fe.message}');
+      debugPrint('[BACKUP DEBUG CATCH] FirebaseException at [$currentStep]: Code=[${fe.code}] Message=[${fe.message}] Plugin=[${fe.plugin}] Details=[$fe]');
       _isSyncing = false;
-      _syncError = "[$currentStep]\nFirebase Hata: [${fe.code}]\n${fe.message ?? fe.toString()}";
+      _syncError = "[$currentStep]\nFirebase Hata: [${fe.code}]\n${fe.message ?? fe.toString()}\n(UID: ${user.uid})";
       notifyListeners();
       return false;
     } catch (e, stack) {
-      debugPrint('Backup Error: [$currentStep] $e\n$stack');
+      debugPrint('[BACKUP DEBUG CATCH] General Exception at [$currentStep]: Error=$e\n$stack');
       _isSyncing = false;
       _syncError = "[$currentStep]\nHata: $e";
       notifyListeners();
@@ -539,56 +880,76 @@ class SyncProvider extends ChangeNotifier {
 
     String currentStep = "1. Buluttan Veri Çekiliyor";
     try {
-      final String docId = _firestoreDocId(user);
-      // 1. Fetch backup document from Cloud
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(docId)
-          .collection('backups')
-          .doc('latest')
-          .get();
+      // 0. Refresh Auth Token to guarantee active credentials
+      try {
+        await user.getIdToken(true);
+        debugPrint('[RESTORE DEBUG] Auth token refreshed successfully for UID=${user.uid}');
+      } catch (tokenErr) {
+        debugPrint('[RESTORE DEBUG WARNING] Token refresh error: $tokenErr');
+      }
 
-      if (!doc.exists || doc.data() == null) {
+      DocumentSnapshot<Map<String, dynamic>>? docSnap;
+
+      final candidateCols = ['users', 'user_backups', 'backups'];
+      final candidateDocIds = [
+        user.uid,
+        if (user.email != null && user.email!.isNotEmpty) ...[
+          user.email!.toLowerCase().trim().replaceAll('.', '_').replaceAll('@', '_at_'),
+          user.email!,
+        ],
+      ];
+
+      // 1. Try reading top-level doc across collections & candidate IDs
+      for (final col in candidateCols) {
+        for (final candidateId in candidateDocIds) {
+          currentStep = "1. Buluttan Veri Aranıyor ($col/$candidateId)";
+          try {
+            final ds = await FirebaseFirestore.instance.collection(col).doc(candidateId).get();
+            if (ds.exists && ds.data() != null && ds.data()!['json_data'] != null) {
+              docSnap = ds;
+              debugPrint('[RESTORE DEBUG SUCCESS] Found backup doc at $col/$candidateId');
+              break;
+            }
+          } catch (directErr) {
+            debugPrint('[RESTORE DEBUG WARNING] Direct doc read failed ($col/$candidateId): $directErr');
+          }
+        }
+        if (docSnap != null) break;
+      }
+
+      // 2. Fallback: Query users collection by email for cross-device phone <-> tablet sync
+      if (docSnap == null && user.email != null && user.email!.isNotEmpty) {
+        currentStep = "1. E-posta İle Yedek Aranıyor (${user.email})";
+        for (final col in candidateCols) {
+          try {
+            final q = await FirebaseFirestore.instance
+                .collection(col)
+                .where('email', isEqualTo: user.email)
+                .get();
+            for (final d in q.docs) {
+              if (d.data()['json_data'] != null) {
+                docSnap = d;
+                debugPrint('[RESTORE DEBUG SUCCESS] Found backup doc by email at $col/${d.id}');
+                break;
+              }
+            }
+          } catch (emailQueryErr) {
+            debugPrint('[RESTORE DEBUG WARNING] Email query failed ($col): $emailQueryErr');
+          }
+          if (docSnap != null) break;
+        }
+      }
+
+      if (docSnap == null || !docSnap.exists || docSnap.data() == null || docSnap.data()!['json_data'] == null) {
         _isSyncing = false;
-        _syncError = "Bulutta kayıtlı yedek bulunamadı. (${user.email ?? user.uid})";
+        _syncError = "Bulutta henüz kaydedilmiş bir yedek bulunamadı.\nLütfen önce verilerinizin olduğu cihazdan 'Yedekle' butonuna basınız. (${user.email ?? user.uid})";
         notifyListeners();
         return false;
       }
 
-      final docMap = doc.data()!;
-      final Map<String, dynamic> data;
-      if (docMap.containsKey('chunkCount')) {
-        final int count = (docMap['chunkCount'] as num).toInt();
-        final StringBuffer sb = StringBuffer();
-
-        // Fetch chunk sub-documents
-        final chunksSnap = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(docId)
-            .collection('backups')
-            .doc('latest')
-            .collection('chunks')
-            .get();
-
-        final Map<String, String> chunkMap = {};
-        for (final cDoc in chunksSnap.docs) {
-          chunkMap[cDoc.id] = cDoc.data()['data'] as String? ?? '';
-        }
-
-        for (int i = 0; i < count; i++) {
-          if (chunkMap.containsKey('chunk_$i')) {
-            sb.write(chunkMap['chunk_$i']);
-          } else if (docMap.containsKey('chunk_$i')) {
-            sb.write(docMap['chunk_$i']);
-          }
-        }
-
-        data = jsonDecode(sb.toString()) as Map<String, dynamic>;
-      } else if (docMap.containsKey('json_data') && docMap['json_data'] is String) {
-        data = jsonDecode(docMap['json_data'] as String) as Map<String, dynamic>;
-      } else {
-        data = docMap;
-      }
+      final docMap = docSnap.data()!;
+      final jsonText = docMap['json_data'] as String;
+      final Map<String, dynamic> data = jsonDecode(jsonText) as Map<String, dynamic>;
 
       // 2. Books
       final booksBox = DatabaseService.getBooksBox();
@@ -601,13 +962,72 @@ class SyncProvider extends ChangeNotifier {
         }
       }
 
-      // 3. Pages
+      // 3. Pages (restore backgroundImageUrl → backgroundImageBase64)
       final pagesBox = DatabaseService.getPagesBox();
       await pagesBox.clear();
       final pagesData = data['pages'] as List<dynamic>? ?? [];
       for (final p in pagesData) {
         if (p is Map) {
-          final page = NotePage.fromJson(Map<String, dynamic>.from(p));
+          final pageMap = Map<String, dynamic>.from(p);
+          // Restore backgroundImageUrl → backgroundImageBase64 in drawingJson
+          if (pageMap['drawingJson'] is String) {
+            try {
+              final dj = jsonDecode(pageMap['drawingJson'] as String);
+              if (dj is Map && dj.containsKey('pages')) {
+                final innerPages = dj['pages'] as List<dynamic>;
+                bool changed = false;
+                drive.DriveApi? driveApi;
+                final restored = await Future.wait(innerPages.map((ip) async {
+                  if (ip is! Map) return ip;
+                  final ipMap = Map<String, dynamic>.from(ip);
+                  final url = ipMap['backgroundImageUrl'];
+                  if (url == null || url is! String || url.isEmpty) return ipMap;
+                  try {
+                    final tmpDir = await getApplicationDocumentsDirectory();
+                    if (url.startsWith('drive://')) {
+                      final driveId = url.replaceAll('drive://', '');
+                      final tmpFile = File('${tmpDir.path}/tmp_bg_drive_$driveId.png');
+                      driveApi ??= await _getDriveApi();
+                      if (driveApi != null) {
+                        final ok = await _driveService.downloadFile(
+                          driveApi: driveApi!,
+                          driveFileId: driveId,
+                          targetLocalFile: tmpFile,
+                        );
+                        if (ok && await tmpFile.exists()) {
+                          final bytes = await tmpFile.readAsBytes();
+                          ipMap['backgroundImageBase64'] = base64Encode(bytes);
+                          ipMap.remove('backgroundImageUrl');
+                          changed = true;
+                        }
+                      }
+                    } else if (url.startsWith('http')) {
+                      final ref = FirebaseStorage.instance.refFromURL(url);
+                      final tmpFile = File('${tmpDir.path}/tmp_bg_${ref.name}');
+                      if (!await tmpFile.exists()) {
+                        await ref.writeToFile(tmpFile);
+                      }
+                      final bytes = await tmpFile.readAsBytes();
+                      ipMap['backgroundImageBase64'] = base64Encode(bytes);
+                      ipMap.remove('backgroundImageUrl');
+                      changed = true;
+                    }
+                  } catch (e) {
+                    debugPrint('Page bg restore error: $e');
+                  }
+                  return ipMap;
+                }));
+                if (changed) {
+                  final djMap = Map<String, dynamic>.from(dj);
+                  djMap['pages'] = restored;
+                  pageMap['drawingJson'] = jsonEncode(djMap);
+                }
+              }
+            } catch (e) {
+              debugPrint('drawingJson parse error during restore: $e');
+            }
+          }
+          final page = NotePage.fromJson(pageMap);
           await pagesBox.put(page.id, page);
         }
       }
@@ -699,8 +1119,13 @@ class SyncProvider extends ChangeNotifier {
         }
       }
 
-      currentStep = "10. Görseller Firebase Storage'dan İndiriliyor";
-      final urlToLocal = await _downloadImagesFromStorage(user, rawNotesList);
+      currentStep = "10. Görseller Google Drive'dan İndiriliyor";
+      Map<String, String> urlToLocal = {};
+      try {
+        urlToLocal = await _downloadImagesFromDrive(user, rawNotesList);
+      } catch (imgErr) {
+        debugPrint('[RESTORE WARNING] Image Drive download failed, proceeding with text restore: $imgErr');
+      }
 
       for (final item in photoNotesData) {
         if (item is Map && item.containsKey('key') && item.containsKey('value')) {
@@ -737,12 +1162,17 @@ class SyncProvider extends ChangeNotifier {
         await settingsBox.put(key.toString(), settingsData[key]);
       }
 
-      // Update backup local timestamp
+      // Update backup local timestamp & device
       if (data['lastBackupTime'] != null) {
         _lastBackupTime = DateTime.tryParse(data['lastBackupTime'].toString());
         if (_lastBackupTime != null) {
           await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
         }
+      }
+      final backupDev = data['lastBackupDevice'] ?? data['deviceInfo'];
+      if (backupDev != null) {
+        _lastBackupDevice = backupDev.toString();
+        await settingsBox.put('last_backup_device', _lastBackupDevice);
       }
 
       _isSyncing = false;

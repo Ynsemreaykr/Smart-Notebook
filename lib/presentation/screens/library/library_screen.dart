@@ -1,7 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../application/providers/book_provider.dart';
 import '../../../application/providers/page_provider.dart';
 import '../../../application/providers/theme_provider.dart';
@@ -12,6 +10,7 @@ import '../../widgets/book_card.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/file_picker_helper.dart';
+import '../../widgets/floating_book_shortcut.dart';
 import '../notebook/page_editor_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -25,6 +24,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final PageRepository _pageRepository = PageRepository();
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  
+  // For floating book shortcut
+  Book? _shortcutBook;
+  bool _showShortcut = false;
 
   @override
   void initState() {
@@ -67,7 +70,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PageEditorScreen(pageId: pages.first.id),
+          builder: (_) => PageEditorScreen(
+            pageId: pages.first.id,
+            bookId: book.id,
+          ),
         ),
       ).then((_) {
         if (mounted) context.read<BookProvider>().loadBooks();
@@ -78,7 +84,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PageEditorScreen(pageId: newPage.id),
+            builder: (_) => PageEditorScreen(
+              pageId: newPage.id,
+              bookId: book.id,
+            ),
           ),
         ).then((_) {
           if (mounted) context.read<BookProvider>().loadBooks();
@@ -199,7 +208,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Container(
+      body: Stack(
+        children: [
+          Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [AppTheme.darkCard, AppTheme.darkBg],
@@ -276,14 +287,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     final pageCount =
                         _pageRepository.getPagesByBookId(book.id).length;
 
-                    return FadeSlideEntrance(
+                     return FadeSlideEntrance(
                       delay: Duration(milliseconds: index * 50),
-                      child: BookCard(
-                        book: book,
-                        pageCount: pageCount,
-                        onTap: () => _openBook(book),
-                        onRename: () => _showRenameDialog(book.id, book.title),
-                        onDelete: () => _showDeleteConfirmation(book.id, book.title),
+                      child: GestureDetector(
+                        onLongPress: () {
+                          setState(() {
+                            _shortcutBook = book;
+                            _showShortcut = true;
+                          });
+                        },
+                        child: BookCard(
+                          book: book,
+                          pageCount: pageCount,
+                          onTap: () => _openBook(book),
+                          onRename: () => _showRenameDialog(book.id, book.title),
+                          onDelete: () => _showDeleteConfirmation(book.id, book.title),
+                        ),
                       ),
                     );
                   },
@@ -293,6 +312,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ],
       ),
+    ),
+          // Floating book shortcut overlay
+          if (_showShortcut && _shortcutBook != null)
+            FloatingBookShortcut(
+              bookTitle: _shortcutBook!.title,
+              onClose: () => setState(() => _showShortcut = false),
+            ),
+        ],
       ),
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,

@@ -26,7 +26,6 @@ class PhotoNoteViewerScreen extends StatefulWidget {
 }
 
 class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
-  bool _showUI = true;
   final List<String> _presetColors = [
     '#3B82F6', // Blue
     '#EF4444', // Red
@@ -41,6 +40,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   int _currentPage = 0;
   late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
+  final ScrollController _verticalScrollController = ScrollController();
+  final Map<int, TextEditingController> _imageNoteControllers = {};
+  final Set<int> _focusedNoteIndexes = {};
   Timer? _autoScrollTimer;
 
   void _startAutoScroll(double step, ScrollController controller) {
@@ -63,8 +65,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     _autoScrollTimer = null;
   }
 
-  TapDownDetails? _doubleTapDetails;
-
   @override
   void initState() {
     super.initState();
@@ -80,7 +80,49 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     _transformationController.removeListener(_onTransformationChanged);
     _pageController.dispose();
     _transformationController.dispose();
+    _verticalScrollController.dispose();
+    for (final c in _imageNoteControllers.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void _showFullScreenImage(BuildContext context, String imgPath, int index, int total) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: EdgeInsets.zero,
+        child: Stack(
+          children: [
+            Center(
+              child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 6.0,
+                child: Image.file(File(imgPath), fit: BoxFit.contain),
+              ),
+            ),
+            Positioned(
+              top: 40,
+              right: 20,
+              child: IconButton(
+                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            Positioned(
+              top: 48,
+              left: 20,
+              child: AppText(
+                'Görsel ${index + 1} / $total',
+                styleType: AppTextStyleType.bodyMedium,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onTransformationChanged() {
@@ -101,22 +143,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     }
   }
 
-  void _toggleUI() {
-    setState(() {
-      _showUI = !_showUI;
-    });
-  }
 
-  void _handleDoubleTap() {
-    if (_transformationController.value != Matrix4.identity()) {
-      _transformationController.value = Matrix4.identity();
-    } else {
-      final position = _doubleTapDetails!.localPosition;
-      _transformationController.value = Matrix4.identity()
-        ..translate(-position.dx * 1.5, -position.dy * 1.5)
-        ..scale(2.5);
-    }
-  }
 
   Future<void> _shareImage(PhotoNote note) async {
     try {
@@ -802,7 +829,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
       builder: (context, provider, child) {
         final notes = provider.photoNotes;
         final noteIndex = notes.indexWhere((n) => n.id == widget.noteId);
-        
+
         if (noteIndex == -1) {
           return const Scaffold(
             backgroundColor: Colors.black,
@@ -816,267 +843,286 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         final totalImages = note.imagePaths.length;
         final noteFlashcards = provider.getFlashcardsForNote(note.id);
 
-        if (_currentPage >= totalImages) {
-          _currentPage = totalImages > 0 ? totalImages - 1 : 0;
-        }
-
         return Scaffold(
-          backgroundColor: Colors.black,
+          backgroundColor: const Color(0xFF0F172A),
           body: Stack(
             children: [
-              // Main Swipeable Multi-Image Gallery PageView
-              GestureDetector(
-                onTap: _toggleUI,
-                onDoubleTapDown: (details) => _doubleTapDetails = details,
-                onDoubleTap: _handleDoubleTap,
-                child: PageView.builder(
-                  controller: _pageController,
-                  physics: _isZoomed
-                      ? const NeverScrollableScrollPhysics()
-                      : const BouncingScrollPhysics(),
+              // Main Vertical Scrollable Multi-Image List with Per-Image Notes
+              Scrollbar(
+                controller: _verticalScrollController,
+                thumbVisibility: true,
+                thickness: 6,
+                radius: const Radius.circular(8),
+                child: ListView.builder(
+                  controller: _verticalScrollController,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 96, 16, 40),
                   itemCount: totalImages,
-                  onPageChanged: (idx) {
-                    setState(() {
-                      _currentPage = idx;
-                      _isZoomed = false;
-                      _transformationController.value = Matrix4.identity();
-                    });
-                  },
                   itemBuilder: (context, index) {
                     final imgPath = note.imagePaths[index];
-                    return Center(
-                      child: Hero(
-                        tag: index == 0 ? 'photonote_img_${note.id}' : 'photonote_img_${note.id}_$index',
-                        child: InteractiveViewer(
-                          transformationController: _transformationController,
-                          clipBehavior: Clip.none,
-                          panEnabled: true,
-                          scaleEnabled: true,
-                          minScale: 1.0,
-                          maxScale: 6.0,
-                          child: Image.file(
-                            File(imgPath),
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: double.infinity,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Center(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
+                    final imageNoteText = (index < note.imageNotes.length)
+                        ? note.imageNotes[index]
+                        : (index == 0 ? note.note : '');
+
+                    if (!_imageNoteControllers.containsKey(index)) {
+                      _imageNoteControllers[index] = TextEditingController(text: imageNoteText);
+                    } else if (!_focusedNoteIndexes.contains(index) &&
+                        _imageNoteControllers[index]!.text != imageNoteText) {
+                      _imageNoteControllers[index]!.text = imageNoteText;
+                    }
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: cardColor.withOpacity(0.3), width: 1.2),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header Badge for Image Index
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: cardColor.withOpacity(0.2),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                              border: Border(bottom: BorderSide(color: cardColor.withOpacity(0.3))),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
                                   children: [
-                                    Icon(Icons.broken_image_rounded, size: 64, color: AppColors.textMuted),
-                                    AppSpacing.gapHMd,
-                                    const AppText('Görsel yüklenemedi', styleType: AppTextStyleType.headingSmall, color: Colors.white),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: cardColor,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        'Görsel ${index + 1}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      '$totalImages görselden ${index + 1}. sayfa',
+                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                    ),
                                   ],
                                 ),
-                              );
-                            },
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 22),
+                                      tooltip: 'Tam Ekran Büyüt',
+                                      onPressed: () => _showFullScreenImage(context, imgPath, index, totalImages),
+                                    ),
+                                    if (totalImages > 1)
+                                      IconButton(
+                                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                                        tooltip: 'Bu Görseli Sil',
+                                        onPressed: () {
+                                          showDialog(
+                                            context: context,
+                                            builder: (ctx) => AlertDialog(
+                                              backgroundColor: const Color(0xFF1E293B),
+                                              title: const Text('Görseli Sil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                              content: Text('${index + 1}. görsel karttan silinecektir. Emin misiniz?', style: const TextStyle(color: Colors.white70)),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(ctx),
+                                                  child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+                                                ),
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    Navigator.pop(ctx);
+                                                    await provider.removeImageFromNote(note.id, index);
+                                                    _imageNoteControllers.remove(index);
+                                                  },
+                                                  child: const Text('Sil', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+
+                          // Image Container
+                          GestureDetector(
+                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages),
+                            child: Container(
+                              width: double.infinity,
+                              constraints: const BoxConstraints(maxHeight: 380),
+                              color: Colors.black26,
+                              child: Image.file(
+                                File(imgPath),
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    height: 180,
+                                    color: Colors.black38,
+                                    child: const Center(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                                          SizedBox(height: 8),
+                                          Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+
+                          // Per-Image Note Box
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF0F172A),
+                              borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Görsel ${index + 1} İçin Not',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Focus(
+                                  onFocusChange: (hasFocus) {
+                                    if (hasFocus) {
+                                      _focusedNoteIndexes.add(index);
+                                    } else {
+                                      _focusedNoteIndexes.remove(index);
+                                      provider.updateImageNote(
+                                        note.id,
+                                        index,
+                                        _imageNoteControllers[index]?.text ?? '',
+                                      );
+                                    }
+                                  },
+                                  child: TextField(
+                                    controller: _imageNoteControllers[index],
+                                    maxLines: null,
+                                    minLines: 2,
+                                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                                    decoration: InputDecoration(
+                                      hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
+                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.05),
+                                      contentPadding: const EdgeInsets.all(12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Colors.white12),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                                      ),
+                                    ),
+                                    onChanged: (val) {
+                                      provider.updateImageNote(note.id, index, val);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
                 ),
               ),
 
-              // Top Overlay Bar (AppBar replacement)
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeInOut,
-                top: _showUI ? 0 : -140,
+              // Top AppBar
+              Positioned(
+                top: 0,
                 left: 0,
                 right: 0,
                 child: SafeArea(
                   top: true,
                   bottom: false,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.black.withOpacity(0.85), Colors.transparent],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
+                      color: const Color(0xFF0F172A).withOpacity(0.95),
+                      border: const Border(bottom: BorderSide(color: Colors.white12)),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black54, blurRadius: 8),
+                      ],
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                           onPressed: () => Navigator.pop(context),
                         ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.add_photo_alternate_rounded, color: Colors.white, size: 26),
-                              tooltip: 'Ek Görsel Ekle',
-                              onPressed: () => _pickAndAddExtraImage(note),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                Icons.style_rounded,
-                                color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                                size: 26,
-                              ),
-                              tooltip: 'Görsele Özel Bilgi Kartları',
-                              onPressed: () => _openFlashcardsSheet(context, note),
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
-                                color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                                size: 28,
-                              ),
-                              tooltip: 'Görsel Notları',
-                              onPressed: () => _openNoteTextScreen(context, note),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.share_rounded, color: Colors.white),
-                              tooltip: 'Paylaş',
-                              onPressed: () => _shareImage(note),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-                              tooltip: 'Sil',
-                              onPressed: () => _deleteNote(context, note),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Bottom Info Bar
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeInOut,
-                bottom: _showUI ? 0 : -240,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.transparent, Colors.black.withOpacity(0.95)],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Dots Indicator for Multi-Image Gallery
-                      if (totalImages > 1) ...[
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(totalImages, (index) {
-                            final isSelected = _currentPage == index;
-                            return AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              width: isSelected ? 20 : 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFF14B8A6) : Colors.white38,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            );
-                          }),
-                        ),
-                        AppSpacing.gapHSm,
-                      ],
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          if (note.category.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: cardColor.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(AppRadius.small),
-                                border: Border.all(color: cardColor.withOpacity(0.6), width: 1),
-                              ),
-                              child: AppText(
-                                note.category,
-                                styleType: AppTextStyleType.caption,
-                                styleOverride: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          if (totalImages > 1)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF14B8A6).withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(AppRadius.small),
-                                border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.5), width: 1),
-                              ),
-                              child: AppText(
-                                '${_currentPage + 1} / $totalImages Görsel',
-                                styleType: AppTextStyleType.caption,
-                                styleOverride: const TextStyle(
-                                  color: Color(0xFF14B8A6),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      AppSpacing.gapHSm,
-
-                      AppText(
-                        note.title,
-                        styleType: AppTextStyleType.headingLarge,
-                        styleOverride: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      AppSpacing.gapHXs,
-                      AppText(
-                        'Son Güncelleme: $formattedDate',
-                        styleType: AppTextStyleType.bodySmall,
-                        color: Colors.white70,
-                      ),
-                      if (note.note.isNotEmpty) ...[
-                        AppSpacing.gapHSm,
-                        GestureDetector(
-                          onTap: () => _openNoteTextScreen(context, note),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF14B8A6).withOpacity(0.18),
-                              borderRadius: BorderRadius.circular(AppRadius.medium),
-                              border: Border.all(color: const Color(0xFF14B8A6).withOpacity(0.4), width: 1),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.sticky_note_2_rounded, color: Color(0xFF14B8A6), size: 20),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: AppText(
-                                    note.note,
-                                    styleType: AppTextStyleType.bodySmall,
-                                    color: Colors.white,
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const Icon(Icons.chevron_right_rounded, color: Colors.white54, size: 20),
-                              ],
-                            ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            note.title,
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 26),
+                          tooltip: 'Yeni Görsel Ekle',
+                          onPressed: () => _pickAndAddExtraImage(note),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.style_rounded,
+                            color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                            size: 24,
+                          ),
+                          tooltip: 'Bilgi Kartları',
+                          onPressed: () => _openFlashcardsSheet(context, note),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
+                            color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                            size: 24,
+                          ),
+                          tooltip: 'Genel Metin Notu',
+                          onPressed: () => _openNoteTextScreen(context, note),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded, color: Colors.white, size: 22),
+                          tooltip: 'Paylaş',
+                          onPressed: () => _shareImage(note),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                          tooltip: 'Sil',
+                          onPressed: () => _deleteNote(context, note),
+                        ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),

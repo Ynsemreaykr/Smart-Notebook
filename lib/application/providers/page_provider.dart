@@ -105,6 +105,11 @@ class PageProvider extends ChangeNotifier {
     return _pageRepository.getPageById(id);
   }
 
+  /// Get all pages for a specific book (used for multi-page PDF editing)
+  List<NotePage> getPagesByBookId(String bookId) {
+    return _pageRepository.getPagesByBookId(bookId);
+  }
+
   /// Get all pages (for linking from calendar)
   List<NotePage> getAllPages() {
     return _pageRepository.getAllPages();
