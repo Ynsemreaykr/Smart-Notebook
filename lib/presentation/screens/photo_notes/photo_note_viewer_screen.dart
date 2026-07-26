@@ -48,6 +48,63 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️', '📌', '❓', '⚡', '💡', '✏️', '➕', '➖'];
 
   final Map<String, TextEditingController> _sectionControllers = {};
+  final Map<int, String> _customAccordionTitles = {};
+  String? _activeFocusedSecKey;
+
+  void _editAccordionTitle(int index) {
+    final currentTitle = _customAccordionTitles[index] ?? 'Bilgi Kartları';
+    final controller = TextEditingController(text: currentTitle);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Bilgi Kartları Başlığını Değiştir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Başlık girin (Örn: Dağlar Soru Kartları)',
+            hintStyle: const TextStyle(color: Colors.white38),
+            filled: true,
+            fillColor: Colors.black26,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF14B8A6)),
+            onPressed: () {
+              final newTitle = controller.text.trim();
+              if (newTitle.isNotEmpty) {
+                setState(() {
+                  _customAccordionTitles[index] = newTitle;
+                });
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text('Kaydet', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _insertSymbolToActiveField(String symbol, PhotoNote note, PhotoNoteProvider provider) {
+    if (_activeFocusedSecKey == null) return;
+    final parts = _activeFocusedSecKey!.split('_');
+    if (parts.length != 2) return;
+    final imageIndex = int.tryParse(parts[0]);
+    final sectionIndex = int.tryParse(parts[1]);
+    if (imageIndex == null || sectionIndex == null) return;
+
+    _insertSymbolToSection(imageIndex, sectionIndex, symbol, note, provider);
+  }
 
   List<String> _parseSections(String rawText) {
     if (rawText.trim().isEmpty) return [];
@@ -1287,12 +1344,18 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                                   // Section TextField
                                                   Focus(
                                                     onFocusChange: (hasFocus) {
-                                                      if (hasFocus) {
-                                                        _focusedNoteIndexes.add(secKey.hashCode);
-                                                      } else {
-                                                        _focusedNoteIndexes.remove(secKey.hashCode);
-                                                        _updateSectionText(index, sIndex, secController.text, note, provider);
-                                                      }
+                                                      setState(() {
+                                                        if (hasFocus) {
+                                                          _activeFocusedSecKey = secKey;
+                                                          _focusedNoteIndexes.add(secKey.hashCode);
+                                                        } else {
+                                                          if (_activeFocusedSecKey == secKey) {
+                                                            _activeFocusedSecKey = null;
+                                                          }
+                                                          _focusedNoteIndexes.remove(secKey.hashCode);
+                                                          _updateSectionText(index, sIndex, secController.text, note, provider);
+                                                        }
+                                                      });
                                                     },
                                                     child: TextField(
                                                       controller: secController,
@@ -1344,7 +1407,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             },
                           ),
 
-                          // v Bilgi Kartları Collapsible Accordion Button
+                          // v Bilgi Kartları Collapsible Accordion Button with Editable Title
                           GestureDetector(
                             onTap: () {
                               setState(() {
@@ -1357,7 +1420,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             },
                             child: Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF1E293B),
                                 borderRadius: BorderRadius.vertical(
@@ -1379,8 +1442,16 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        "v Bilgi Kartları (${noteFlashcards.length} Kart)",
+                                        "v ${_customAccordionTitles[index] ?? 'Bilgi Kartları'} (${noteFlashcards.length} Kart)",
                                         style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      IconButton(
+                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                        padding: EdgeInsets.zero,
+                                        icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 16),
+                                        tooltip: 'Başlığı Değiştir',
+                                        onPressed: () => _editAccordionTitle(index),
                                       ),
                                     ],
                                   ),
@@ -1464,6 +1535,55 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   },
                 ),
               ),
+
+              // Global Symbol Bar under Top AppBar (Appears on Note Field Focus)
+              if (_activeFocusedSecKey != null)
+                Positioned(
+                  top: 60,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    top: true,
+                    bottom: false,
+                    child: Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B).withValues(alpha: 0.96),
+                        border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3)),
+                        ],
+                      ),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _quickSymbols.length,
+                        itemBuilder: (context, sIndex) {
+                          final sym = _quickSymbols[sIndex];
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: InkWell(
+                              onTap: () => _insertSymbolToActiveField(sym, note, provider),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                ),
+                                child: Text(
+                                  sym,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
 
               // Top AppBar
               Positioned(
