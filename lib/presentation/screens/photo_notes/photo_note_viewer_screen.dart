@@ -1415,11 +1415,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                         ),
                                       ),
                                     ],
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                                  ),
+                                );
+                              },
+                            ),
 
                           // v Bilgi Kartları Collapsible Accordion Button with Editable Title
                           GestureDetector(
