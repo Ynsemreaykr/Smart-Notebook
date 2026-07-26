@@ -41,6 +41,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
   // Image Zoom State
   String? _zoomedImagePath;
+  bool _showMiniNoteSection = true;
   final Set<int> _expandedVKartIndices = {};
   final TransformationController _zoomTransformationController = TransformationController();
   TapDownDetails? _zoomDoubleTapDetails;
@@ -343,9 +344,8 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
             ),
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
   /// Zoomable & Scrollable Full-Mini-Window Image View
   Widget _buildZoomedImageView() {
@@ -492,11 +492,12 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ],
                             ),
                           ),
-                          // Image (Tap to Zoom & Pan)
+                          // Image (Single tap toggles note, double tap opens overlay)
                           GestureDetector(
                             onTap: () {
-                              _zoomTransformationController.value = Matrix4.identity();
-                              setState(() => _zoomedImagePath = imgPath);
+                              setState(() {
+                                _showMiniNoteSection = !_showMiniNoteSection;
+                              });
                             },
                             onDoubleTap: () {
                               _zoomTransformationController.value = Matrix4.identity();
@@ -504,7 +505,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             },
                             child: ClipRRect(
                               child: Container(
-                                constraints: const BoxConstraints(maxHeight: 110),
+                                constraints: BoxConstraints(maxHeight: _showMiniNoteSection ? 175 : 270),
                                 width: double.infinity,
                                 child: Stack(
                                   children: [
@@ -520,13 +521,27 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                         child: const Icon(Icons.zoom_in_rounded, size: 12, color: Colors.white),
                                       ),
                                     ),
+                                    Positioned(
+                                      top: 4, right: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.6),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          _showMiniNoteSection ? 'Notu Gizle' : 'Notu Göster',
+                                          style: const TextStyle(fontSize: 8, color: Colors.white70),
+                                        ),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                             ),
                           ),
-                          // Per-Image Note
-                          if (imageNoteText.isNotEmpty)
+                          // Per-Image Note (Togglable on Image Tap)
+                          if (_showMiniNoteSection && imageNoteText.isNotEmpty)
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(6),
@@ -574,7 +589,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        'VKart (${_expandedVKartIndices.contains(index) ? 'Kapat' : 'Aç'})',
+                                        "v VKartlar (${note.flashcards.length} Kart)",
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
@@ -597,10 +612,18 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                 borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
                                 border: Border.all(color: AppTheme.neonPurple.withValues(alpha: 0.4)),
                               ),
-                              child: Text(
-                                imageNoteText.isNotEmpty ? imageNoteText : 'Görsele ait bilgi kartı detayı.',
-                                style: TextStyle(fontSize: 10, color: AppTheme.textPrimary, height: 1.3),
-                              ),
+                              child: note.flashcards.isEmpty
+                                  ? Text('Henüz bilgi kartı eklenmemiş.', style: TextStyle(fontSize: 10, color: AppTheme.textMuted))
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: note.flashcards.map((fc) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 4.0),
+                                        child: Text(
+                                          '• ${fc.question}: ${fc.answer}',
+                                          style: TextStyle(fontSize: 9, color: AppTheme.textPrimary),
+                                        ),
+                                      )).toList(),
+                                    ),
                             ),
                         ],
                       ),
@@ -669,170 +692,63 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       thumbVisibility: true,
                       thickness: 4,
                       radius: const Radius.circular(4),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
+                      child: GridView.builder(
+                        padding: const EdgeInsets.all(4),
                         physics: const BouncingScrollPhysics(),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 10,
+                          childAspectRatio: 0.92,
+                        ),
                         itemCount: folderNotes.length,
                         itemBuilder: (context, index) {
                           final card = folderNotes[index];
-                          final noteText = card.note.isNotEmpty
-                              ? card.note
-                              : (card.imageNotes.isNotEmpty ? card.imageNotes.first : '');
-                          final isVkExpanded = _expandedVKartIndices.contains(index);
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppTheme.neonPurple.withValues(alpha: 0.25)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Title Header
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.neonPurple.withValues(alpha: 0.2),
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                          return GestureDetector(
+                            onTap: () => setState(() => _selectedPhotoNote = card),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2563EB).withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.2),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 3),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          card.title.isEmpty ? 'Görsel Not ${index + 1}' : card.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.neonBlue),
+                                ],
+                              ),
+                              padding: const EdgeInsets.all(10),
+                              child: Stack(
+                                children: [
+                                  Positioned(
+                                    top: 0,
+                                    right: 0,
+                                    child: Icon(
+                                      Icons.more_vert_rounded,
+                                      size: 16,
+                                      color: Colors.white.withValues(alpha: 0.8),
+                                    ),
+                                  ),
+                                  Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                      child: Text(
+                                        card.title.isEmpty ? 'Görsel Kart ${index + 1}' : card.title,
+                                        textAlign: TextAlign.center,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          height: 1.3,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                // Resim (Görsel)
-                                GestureDetector(
-                                  onTap: () {
-                                    _zoomTransformationController.value = Matrix4.identity();
-                                    setState(() => _zoomedImagePath = card.imagePath);
-                                  },
-                                  onDoubleTap: () {
-                                    _zoomTransformationController.value = Matrix4.identity();
-                                    setState(() => _zoomedImagePath = card.imagePath);
-                                  },
-                                  child: ClipRRect(
-                                    child: Container(
-                                      constraints: const BoxConstraints(maxHeight: 115),
-                                      width: double.infinity,
-                                      child: Stack(
-                                        children: [
-                                          _buildImageWidget(card.imagePath),
-                                          Positioned(
-                                            bottom: 4, right: 4,
-                                            child: Container(
-                                              padding: const EdgeInsets.all(3),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withValues(alpha: 0.6),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: const Icon(Icons.zoom_in_rounded, size: 12, color: Colors.white),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ),
                                   ),
-                                ),
-                                // Not Metni
-                                if (noteText.isNotEmpty)
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black26,
-                                    ),
-                                    child: Text(
-                                      noteText,
-                                      style: TextStyle(fontSize: 10, color: AppTheme.textSecondary, height: 1.3),
-                                    ),
-                                  ),
-                                // v VKart (Akordiyon Butonu)
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      if (isVkExpanded) {
-                                        _expandedVKartIndices.remove(index);
-                                      } else {
-                                        _expandedVKartIndices.add(index);
-                                      }
-                                    });
-                                  },
-                                  child: Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.neonPurple.withValues(alpha: 0.15),
-                                      border: Border(top: BorderSide(color: AppTheme.neonPurple.withValues(alpha: 0.3))),
-                                      borderRadius: BorderRadius.vertical(
-                                        bottom: isVkExpanded ? Radius.zero : const Radius.circular(10),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              isVkExpanded
-                                                  ? Icons.keyboard_arrow_up_rounded
-                                                  : Icons.keyboard_arrow_down_rounded,
-                                              size: 16,
-                                              color: AppTheme.neonPurple,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              "v VKart (${isVkExpanded ? 'Kapat' : 'Aç'})",
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppTheme.neonPurple,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        Icon(Icons.style_rounded, size: 12, color: AppTheme.neonPurple),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                if (isVkExpanded)
-                                  GestureDetector(
-                                    onTap: () => setState(() => _selectedPhotoNote = card),
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black45,
-                                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-                                        border: Border.all(color: AppTheme.neonPurple.withValues(alpha: 0.4)),
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Kart Detayı (${card.imagePaths.length} Görsel)',
-                                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppTheme.neonAccent),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            noteText.isNotEmpty ? noteText : 'Görsele ait bilgi kartı detayı.',
-                                            style: TextStyle(fontSize: 10, color: AppTheme.textPrimary, height: 1.3),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           );
                         },

@@ -43,6 +43,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final ScrollController _verticalScrollController = ScrollController();
   final Map<int, TextEditingController> _imageNoteControllers = {};
   final Set<int> _focusedNoteIndexes = {};
+  bool _showNotesSection = true;
+  final Set<int> _expandedVKartIndexes = {};
   Timer? _autoScrollTimer;
 
   void _startAutoScroll(double step, ScrollController controller) {
@@ -957,98 +959,253 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           ),
 
-                          // Image Container
+                          // Image Container (Tap once to toggle note section, double tap to zoom)
                           GestureDetector(
-                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages),
+                            onTap: () {
+                              setState(() {
+                                _showNotesSection = !_showNotesSection;
+                              });
+                            },
+                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages),
                             child: Container(
                               width: double.infinity,
-                              constraints: const BoxConstraints(maxHeight: 380),
+                              constraints: BoxConstraints(maxHeight: _showNotesSection ? 450 : 640),
                               color: Colors.black26,
-                              child: Image.file(
-                                File(imgPath),
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    height: 180,
-                                    color: Colors.black38,
-                                    child: const Center(
-                                      child: Column(
+                              child: Stack(
+                                children: [
+                                  Positioned.fill(
+                                    child: Image.file(
+                                      File(imgPath),
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          height: 180,
+                                          color: Colors.black38,
+                                          child: const Center(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                                                SizedBox(height: 8),
+                                                Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.6),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
-                                          SizedBox(height: 8),
-                                          Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
+                                          Icon(_showNotesSection ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 13, color: Colors.white70),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            _showNotesSection ? 'Notu Gizle' : 'Notu Göster',
+                                            style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                          ),
                                         ],
                                       ),
                                     ),
-                                  );
-                                },
+                                  ),
+                                ],
                               ),
                             ),
                           ),
 
-                          // Per-Image Note Box
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF0F172A),
-                              borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Görsel ${index + 1} İçin Not',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Focus(
-                                  onFocusChange: (hasFocus) {
-                                    if (hasFocus) {
-                                      _focusedNoteIndexes.add(index);
-                                    } else {
-                                      _focusedNoteIndexes.remove(index);
-                                      provider.updateImageNote(
-                                        note.id,
-                                        index,
-                                        _imageNoteControllers[index]?.text ?? '',
-                                      );
-                                    }
-                                  },
-                                  child: TextField(
-                                    controller: _imageNoteControllers[index],
-                                    maxLines: null,
-                                    minLines: 2,
-                                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-                                    decoration: InputDecoration(
-                                      hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
-                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                                      filled: true,
-                                      fillColor: Colors.white.withOpacity(0.05),
-                                      contentPadding: const EdgeInsets.all(12),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: const BorderSide(color: Colors.white12),
+                          // Per-Image Note Box (Togglable on Image Tap)
+                          if (_showNotesSection)
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF0F172A),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Görsel ${index + 1} İçin Not',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
                                       ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
-                                      ),
-                                    ),
-                                    onChanged: (val) {
-                                      provider.updateImageNote(note.id, index, val);
-                                    },
+                                    ],
                                   ),
+                                  const SizedBox(height: 10),
+                                  Focus(
+                                    onFocusChange: (hasFocus) {
+                                      if (hasFocus) {
+                                        _focusedNoteIndexes.add(index);
+                                      } else {
+                                        _focusedNoteIndexes.remove(index);
+                                        provider.updateImageNote(
+                                          note.id,
+                                          index,
+                                          _imageNoteControllers[index]?.text ?? '',
+                                        );
+                                      }
+                                    },
+                                    child: TextField(
+                                      controller: _imageNoteControllers[index],
+                                      maxLines: null,
+                                      minLines: 2,
+                                      style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                                      decoration: InputDecoration(
+                                        hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
+                                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                                        filled: true,
+                                        fillColor: Colors.white.withOpacity(0.05),
+                                        contentPadding: const EdgeInsets.all(12),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: const BorderSide(color: Colors.white12),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                          borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                                        ),
+                                      ),
+                                      onChanged: (val) {
+                                        provider.updateImageNote(note.id, index, val);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          // v VKartlar Collapsible Accordion Button
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                if (_expandedVKartIndexes.contains(index)) {
+                                  _expandedVKartIndexes.remove(index);
+                                } else {
+                                  _expandedVKartIndexes.add(index);
+                                }
+                              });
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.vertical(
+                                  bottom: Radius.circular(_expandedVKartIndexes.contains(index) ? 0 : 16),
                                 ),
-                              ],
+                                border: const Border(top: BorderSide(color: Colors.white10)),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        _expandedVKartIndexes.contains(index)
+                                            ? Icons.keyboard_arrow_up_rounded
+                                            : Icons.keyboard_arrow_down_rounded,
+                                        color: const Color(0xFF14B8A6),
+                                        size: 22,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        "v VKartlar (${noteFlashcards.length} Bilgi Kartı)",
+                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                      ),
+                                    ],
+                                  ),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 16),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _expandedVKartIndexes.contains(index) ? 'Kapat' : 'Aç',
+                                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
+
+                          if (_expandedVKartIndexes.contains(index))
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
+                              ),
+                              child: noteFlashcards.isEmpty
+                                  ? Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                                        TextButton.icon(
+                                          icon: const Icon(Icons.add, size: 16, color: Color(0xFF14B8A6)),
+                                          label: const Text('Ekle', style: TextStyle(color: Color(0xFF14B8A6), fontSize: 12)),
+                                          onPressed: () => _openFlashcardsSheet(context, note),
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: noteFlashcards.map((fc) {
+                                        return Container(
+                                          margin: const EdgeInsets.only(bottom: 8),
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(alpha: 0.05),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: Colors.white10),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.help_outline_rounded, size: 14, color: Color(0xFF14B8A6)),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      fc.question,
+                                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.question_answer_rounded, size: 14, color: Color(0xFF38BDF8)),
+                                                  const SizedBox(width: 6),
+                                                  Expanded(
+                                                    child: Text(
+                                                      fc.answer,
+                                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                            ),
                         ],
                       ),
                     );
