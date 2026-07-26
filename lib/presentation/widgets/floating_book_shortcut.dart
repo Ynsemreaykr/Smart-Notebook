@@ -493,7 +493,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
                             boxShadow: const [
-                              BoxShadow(color: Colors.black80, blurRadius: 12, offset: Offset(0, 4)),
+                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
                             ],
                           ),
                           child: Column(
@@ -529,8 +529,8 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     );
   }
 
-  /// Visual Notes View (Level 1: Folders, Level 2: 2-Column Cards Grid, Level 3: Card Details)
-  Widget _buildVisualNotesView() {
+  /// Visual Cards Menu (Level 1: Folders, Level 2: 2-Column Cards Grid, Level 3: Card Details)
+  Widget _buildVisualCardsMenu() {
     final provider = context.watch<PhotoNoteProvider>();
 
     // Level 3: Card Detail Preview with Vertical Scroll & Per-Image Notes

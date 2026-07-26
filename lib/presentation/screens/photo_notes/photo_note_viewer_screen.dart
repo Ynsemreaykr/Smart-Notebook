@@ -89,44 +89,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     super.dispose();
   }
 
-  void _showFullScreenImage(BuildContext context, String imgPath, int index, int total) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.black,
-        insetPadding: EdgeInsets.zero,
-        child: Stack(
-          children: [
-            Center(
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 6.0,
-                child: Image.file(File(imgPath), fit: BoxFit.contain),
-              ),
-            ),
-            Positioned(
-              top: 40,
-              right: 20,
-              child: IconButton(
-                icon: const Icon(Icons.close_rounded, color: Colors.white, size: 30),
-                onPressed: () => Navigator.pop(ctx),
-              ),
-            ),
-            Positioned(
-              top: 48,
-              left: 20,
-              child: AppText(
-                'Görsel ${index + 1} / $total',
-                styleType: AppTextStyleType.bodyMedium,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _onTransformationChanged() {
     final scale = _transformationController.value.getMaxScaleOnAxis();
     final isZoomedNow = scale > 1.05;
@@ -905,7 +867,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
                             boxShadow: const [
-                              BoxShadow(color: Colors.black80, blurRadius: 12, offset: Offset(0, 4)),
+                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
                             ],
                           ),
                           child: Column(
