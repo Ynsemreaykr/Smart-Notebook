@@ -43,9 +43,30 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final ScrollController _verticalScrollController = ScrollController();
   final Map<int, TextEditingController> _imageNoteControllers = {};
   final Set<int> _focusedNoteIndexes = {};
-  bool _showNotesSection = true;
   final Set<int> _expandedVKartIndexes = {};
   Timer? _autoScrollTimer;
+  final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️', '📌', '❓', '⚡', '💡', '✏️', '➕', '➖'];
+
+  void _insertSymbolToImageNote(int index, String symbol, PhotoNote note, PhotoNoteProvider provider) {
+    final controller = _imageNoteControllers[index];
+    if (controller == null) return;
+
+    final text = controller.text;
+    final selection = controller.selection;
+    int start = selection.start;
+    int end = selection.end;
+
+    if (start < 0 || start > text.length) start = text.length;
+    if (end < 0 || end > text.length) end = text.length;
+
+    final newText = text.replaceRange(start, end, symbol);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + symbol.length),
+    );
+
+    provider.updateImageNote(note.id, index, newText);
+  }
 
   void _startAutoScroll(double step, ScrollController controller) {
     if (_autoScrollTimer?.isActive ?? false) return;
@@ -1113,6 +1134,38 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 10),
+
+                                // Hızlı Sembol Çubuğu (Yukarı, Aşağı ok, Nokta, Yıldız vb.)
+                                SizedBox(
+                                  height: 34,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _quickSymbols.length,
+                                    itemBuilder: (context, sIndex) {
+                                      final sym = _quickSymbols[sIndex];
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 6, bottom: 2),
+                                        child: InkWell(
+                                          onTap: () => _insertSymbolToImageNote(index, sym, note, provider),
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.4)),
+                                            ),
+                                            child: Text(
+                                              sym,
+                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
                                 Focus(
                                   onFocusChange: (hasFocus) {
                                     if (hasFocus) {
