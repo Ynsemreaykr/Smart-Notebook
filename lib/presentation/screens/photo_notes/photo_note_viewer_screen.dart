@@ -1037,37 +1037,35 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           ),
 
-                          // Image Container (Tap opens Tam Ekran with note overlay)
+                          // Image Container (Huge full-width display, tap opens Tam Ekran)
                           GestureDetector(
                             onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             child: Container(
                               width: double.infinity,
-                              constraints: BoxConstraints(maxHeight: _showNotesSection ? 450 : 640),
                               color: Colors.black26,
                               child: Stack(
                                 children: [
-                                  Positioned.fill(
-                                    child: Image.file(
-                                      File(imgPath),
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Container(
-                                          height: 180,
-                                          color: Colors.black38,
-                                          child: const Center(
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
-                                                SizedBox(height: 8),
-                                                Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
-                                              ],
-                                            ),
+                                  Image.file(
+                                    File(imgPath),
+                                    fit: BoxFit.fitWidth,
+                                    width: double.infinity,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        height: 200,
+                                        color: Colors.black38,
+                                        child: const Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                                              SizedBox(height: 8),
+                                              Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
+                                            ],
                                           ),
-                                        );
-                                      },
-                                    ),
+                                        ),
+                                      );
+                                    },
                                   ),
                                   Positioned(
                                     top: 8,
@@ -1078,14 +1076,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                         color: Colors.black.withValues(alpha: 0.6),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
-                                      child: Row(
+                                      child: const Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(_showNotesSection ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 13, color: Colors.white70),
-                                          const SizedBox(width: 4),
+                                          Icon(Icons.zoom_in_rounded, size: 13, color: Colors.white70),
+                                          SizedBox(width: 4),
                                           Text(
-                                            _showNotesSection ? 'Notu Gizle' : 'Notu Göster',
-                                            style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                            'Tam Ekran',
+                                            style: TextStyle(color: Colors.white70, fontSize: 10),
                                           ),
                                         ],
                                       ),
@@ -1096,9 +1094,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           ),
 
-                          // Per-Image Note Box (Togglable on Image Tap)
-                          if (_showNotesSection)
-                            Container(
+                          // Per-Image Note Box
+                          Container(
                               padding: const EdgeInsets.all(16),
                               decoration: const BoxDecoration(
                                 color: Color(0xFF0F172A),

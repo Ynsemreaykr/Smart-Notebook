@@ -615,33 +615,26 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             child: ClipRRect(
                               child: Container(
-                                constraints: BoxConstraints(maxHeight: _showMiniNoteSection ? 175 : 270),
                                 width: double.infinity,
+                                color: Colors.black26,
                                 child: Stack(
                                   children: [
                                     _buildImageWidget(imgPath),
                                     Positioned(
                                       bottom: 4, right: 4,
                                       child: Container(
-                                        padding: const EdgeInsets.all(3),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Icon(Icons.zoom_in_rounded, size: 12, color: Colors.white),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 4, right: 4,
-                                      child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: Colors.black.withValues(alpha: 0.6),
                                           borderRadius: BorderRadius.circular(4),
                                         ),
-                                        child: Text(
-                                          _showMiniNoteSection ? 'Notu Gizle' : 'Notu Göster',
-                                          style: const TextStyle(fontSize: 8, color: Colors.white70),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.zoom_in_rounded, size: 10, color: Colors.white),
+                                            SizedBox(width: 3),
+                                            Text('Tam Ekran', style: TextStyle(fontSize: 8, color: Colors.white70)),
+                                          ],
                                         ),
                                       ),
                                     ),
