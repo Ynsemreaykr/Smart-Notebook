@@ -107,15 +107,24 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   }
 
   List<String> _parseSections(String rawText) {
-    if (rawText.trim().isEmpty) return [];
+    if (rawText.isEmpty) return [];
     return rawText.split('\n---\n');
   }
 
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
     final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
     final sections = _parseSections(rawText);
-    sections.add('');
+    sections.add(' ');
+    final newSecIndex = sections.length - 1;
+    final secKey = '${imageIndex}_$newSecIndex';
     final updatedText = sections.join('\n---\n');
+
+    _sectionControllers[secKey] = TextEditingController(text: ' ');
+    setState(() {
+      _activeFocusedSecKey = secKey;
+      _focusedNoteIndexes.add(secKey.hashCode);
+    });
+
     provider.updateImageNote(note.id, imageIndex, updatedText);
   }
 
@@ -1173,6 +1182,29 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         GestureDetector(
+                                          onTap: () => _addNoteSection(index, note, provider),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF14B8A6),
+                                              borderRadius: BorderRadius.circular(6),
+                                              boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)],
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.add_rounded, size: 13, color: Colors.white),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  '+ Not',
+                                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        GestureDetector(
                                           onTap: () => _showReplaceImagePicker(context, note, index),
                                           child: Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1228,6 +1260,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           Builder(
                             builder: (context) {
                               final noteSections = _parseSections(imageNoteText);
+                              if (noteSections.isEmpty) return const SizedBox.shrink();
 
                               return Container(
                                 width: double.infinity,
@@ -1238,27 +1271,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    if (noteSections.isEmpty) ...[
-                                      // Initial state: No section until '+' is pressed
-                                      Center(
-                                        child: OutlinedButton.icon(
-                                          style: OutlinedButton.styleFrom(
-                                            foregroundColor: const Color(0xFF14B8A6),
-                                            side: const BorderSide(color: Color(0xFF14B8A6), width: 1.2),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                          ),
-                                          icon: const Icon(Icons.add_rounded, size: 20),
-                                          label: const Text(
-                                            'Not Bölümü Ekle (+)',
-                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                          ),
-                                          onPressed: () => _addNoteSection(index, note, provider),
-                                        ),
-                                      ),
-                                    ] else ...[
-                                      // Display each section (Bölüm 1, Bölüm 2, etc.)
-                                      for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                                    // Display each section (Bölüm 1, Bölüm 2, etc.)
+                                    for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
                                         Builder(
                                           builder: (context) {
                                             final secKey = '${index}_$sIndex';
