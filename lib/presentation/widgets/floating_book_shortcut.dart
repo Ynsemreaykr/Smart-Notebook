@@ -697,19 +697,35 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ),
                             ),
                           ),
-                          // Per-Image Note
-                          if (imageNoteText.isNotEmpty)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: Colors.black26,
-                              ),
-                              child: Text(
-                                imageNoteText,
-                                style: TextStyle(fontSize: 10, color: AppTheme.textSecondary, height: 1.3),
-                              ),
-                            ),
+                          // Per-Image Note Sections
+                          Builder(
+                            builder: (context) {
+                              if (imageNoteText.trim().isEmpty) return const SizedBox.shrink();
+                              final sections = imageNoteText.split('\n---\n');
+                              if (sections.isEmpty) return const SizedBox.shrink();
+
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black26,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    for (int sIndex = 0; sIndex < sections.length; sIndex++) ...[
+                                      Text(
+                                        'Not Bölümü ${sIndex + 1}: ${sections[sIndex]}',
+                                        style: TextStyle(fontSize: 9, color: AppTheme.textSecondary, height: 1.3),
+                                      ),
+                                      if (sIndex < sections.length - 1)
+                                        const SizedBox(height: 3),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
 
                           // Collapsible Bilgi Kartları (v sembollü akordiyon buton)
                           GestureDetector(

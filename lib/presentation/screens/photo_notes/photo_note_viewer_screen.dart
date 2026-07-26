@@ -47,8 +47,35 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   Timer? _autoScrollTimer;
   final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️', '📌', '❓', '⚡', '💡', '✏️', '➕', '➖'];
 
-  void _insertSymbolToImageNote(int index, String symbol, PhotoNote note, PhotoNoteProvider provider) {
-    final controller = _imageNoteControllers[index];
+  final Map<String, TextEditingController> _sectionControllers = {};
+
+  List<String> _parseSections(String rawText) {
+    if (rawText.trim().isEmpty) return [];
+    return rawText.split('\n---\n');
+  }
+
+  void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
+    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
+    final sections = _parseSections(rawText);
+    sections.add('');
+    final updatedText = sections.join('\n---\n');
+    provider.updateImageNote(note.id, imageIndex, updatedText);
+  }
+
+  void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
+    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
+    final sections = _parseSections(rawText);
+    if (sectionIndex >= 0 && sectionIndex < sections.length) {
+      sections.removeAt(sectionIndex);
+      _sectionControllers.remove('${imageIndex}_$sectionIndex');
+      final updatedText = sections.join('\n---\n');
+      provider.updateImageNote(note.id, imageIndex, updatedText);
+    }
+  }
+
+  void _insertSymbolToSection(int imageIndex, int sectionIndex, String symbol, PhotoNote note, PhotoNoteProvider provider) {
+    final key = '${imageIndex}_$sectionIndex';
+    final controller = _sectionControllers[key];
     if (controller == null) return;
 
     final text = controller.text;
@@ -65,7 +92,18 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
       selection: TextSelection.collapsed(offset: start + symbol.length),
     );
 
-    provider.updateImageNote(note.id, index, newText);
+    _updateSectionText(imageIndex, sectionIndex, newText, note, provider);
+  }
+
+  void _updateSectionText(int imageIndex, int sectionIndex, String newSectionText, PhotoNote note, PhotoNoteProvider provider) {
+    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
+    final sections = _parseSections(rawText);
+    while (sections.length <= sectionIndex) {
+      sections.add('');
+    }
+    sections[sectionIndex] = newSectionText;
+    final updatedText = sections.join('\n---\n');
+    provider.updateImageNote(note.id, imageIndex, updatedText);
   }
 
   void _startAutoScroll(double step, ScrollController controller) {
@@ -914,48 +952,63 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   ),
 
                   // Bottom Semi-Transparent Note Overlay OVER Image X (Arka plan X olacak şekilde)
-                  if (showNoteOverlay && imageNoteText.isNotEmpty)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: SafeArea(
-                        top: false,
-                        child: Container(
-                          margin: const EdgeInsets.all(16),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                            boxShadow: const [
-                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 18),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Görsel ${index + 1} İçin Not',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
-                                  ),
+                  if (showNoteOverlay) ...[
+                    Builder(
+                      builder: (context) {
+                        final overlaySections = _parseSections(imageNoteText);
+                        if (overlaySections.isEmpty) return const SizedBox.shrink();
+
+                        return Positioned(
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          child: SafeArea(
+                            top: false,
+                            child: Container(
+                              margin: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                boxShadow: const [
+                                  BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                imageNoteText,
-                                style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 16),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Not Bölümü ${sIndex + 1}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      overlaySections[sIndex],
+                                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                    ),
+                                    if (sIndex < overlaySections.length - 1)
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(vertical: 8),
+                                        child: Divider(color: Colors.white24, height: 1),
+                                      ),
+                                  ],
+                                ],
                               ),
-                            ],
+                            ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
+                  ],
                 ],
               ),
             );
@@ -1114,98 +1167,181 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           ),
 
-                          // Per-Image Note Box
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF0F172A),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
+                          // Multi-Section Note Area
+                          Builder(
+                            builder: (context) {
+                              final noteSections = _parseSections(imageNoteText);
+
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF0F172A),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Görsel ${index + 1} İçin Not',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
-                                    ),
+                                    if (noteSections.isEmpty) ...[
+                                      // Initial state: No section until '+' is pressed
+                                      Center(
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: const Color(0xFF14B8A6),
+                                            side: const BorderSide(color: Color(0xFF14B8A6), width: 1.2),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                          ),
+                                          icon: const Icon(Icons.add_rounded, size: 20),
+                                          label: const Text(
+                                            'Not Bölümü Ekle (+)',
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                          onPressed: () => _addNoteSection(index, note, provider),
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      // Display each section (Bölüm 1, Bölüm 2, etc.)
+                                      for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                                        Builder(
+                                          builder: (context) {
+                                            final secKey = '${index}_$sIndex';
+                                            final secText = noteSections[sIndex];
+
+                                            if (!_sectionControllers.containsKey(secKey)) {
+                                              _sectionControllers[secKey] = TextEditingController(text: secText);
+                                            } else if (!_focusedNoteIndexes.contains(secKey.hashCode) &&
+                                                _sectionControllers[secKey]!.text != secText) {
+                                              _sectionControllers[secKey]!.text = secText;
+                                            }
+
+                                            final secController = _sectionControllers[secKey]!;
+
+                                            return Container(
+                                              margin: const EdgeInsets.only(bottom: 12),
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withValues(alpha: 0.04),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  // Section Header
+                                                  Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 18),
+                                                          const SizedBox(width: 6),
+                                                          Text(
+                                                            'Not Bölümü ${sIndex + 1}',
+                                                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 12),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      IconButton(
+                                                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                                        padding: EdgeInsets.zero,
+                                                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                                                        tooltip: 'Bu Not Bölümünü Sil',
+                                                        onPressed: () => _removeNoteSection(index, sIndex, note, provider),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 6),
+
+                                                  // Quick Symbols Toolbar
+                                                  SizedBox(
+                                                    height: 32,
+                                                    child: ListView.builder(
+                                                      scrollDirection: Axis.horizontal,
+                                                      itemCount: _quickSymbols.length,
+                                                      itemBuilder: (context, qIndex) {
+                                                        final sym = _quickSymbols[qIndex];
+                                                        return Padding(
+                                                          padding: const EdgeInsets.only(right: 6, bottom: 2),
+                                                          child: InkWell(
+                                                            onTap: () => _insertSymbolToSection(index, sIndex, sym, note, provider),
+                                                            borderRadius: BorderRadius.circular(6),
+                                                            child: Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                                              decoration: BoxDecoration(
+                                                                color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
+                                                              ),
+                                                              child: Text(
+                                                                sym,
+                                                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+
+                                                  // Section TextField
+                                                  Focus(
+                                                    onFocusChange: (hasFocus) {
+                                                      if (hasFocus) {
+                                                        _focusedNoteIndexes.add(secKey.hashCode);
+                                                      } else {
+                                                        _focusedNoteIndexes.remove(secKey.hashCode);
+                                                        _updateSectionText(index, sIndex, secController.text, note, provider);
+                                                      }
+                                                    },
+                                                    child: TextField(
+                                                      controller: secController,
+                                                      maxLines: null,
+                                                      minLines: 2,
+                                                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                                      decoration: InputDecoration(
+                                                        hintText: 'Not bölümü ${sIndex + 1} için notunuzu yazın...',
+                                                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
+                                                        filled: true,
+                                                        fillColor: Colors.black26,
+                                                        contentPadding: const EdgeInsets.all(10),
+                                                        border: OutlineInputBorder(
+                                                          borderRadius: BorderRadius.circular(8),
+                                                          borderSide: const BorderSide(color: Colors.white12),
+                                                        ),
+                                                        focusedBorder: OutlineInputBorder(
+                                                          borderRadius: BorderRadius.circular(8),
+                                                          borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                                                        ),
+                                                      ),
+                                                      onChanged: (val) {
+                                                        _updateSectionText(index, sIndex, val, note, provider);
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+
+                                      // Add New Note Section Button at bottom
+                                      Center(
+                                        child: TextButton.icon(
+                                          icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF14B8A6), size: 18),
+                                          label: const Text(
+                                            'Yeni Not Bölümü Ekle (+)',
+                                            style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                          onPressed: () => _addNoteSection(index, note, provider),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
-                                const SizedBox(height: 10),
-
-                                // Hızlı Sembol Çubuğu (Yukarı, Aşağı ok, Nokta, Yıldız vb.)
-                                SizedBox(
-                                  height: 34,
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: _quickSymbols.length,
-                                    itemBuilder: (context, sIndex) {
-                                      final sym = _quickSymbols[sIndex];
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 6, bottom: 2),
-                                        child: InkWell(
-                                          onTap: () => _insertSymbolToImageNote(index, sym, note, provider),
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.4)),
-                                            ),
-                                            child: Text(
-                                              sym,
-                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Focus(
-                                  onFocusChange: (hasFocus) {
-                                    if (hasFocus) {
-                                      _focusedNoteIndexes.add(index);
-                                    } else {
-                                      _focusedNoteIndexes.remove(index);
-                                      provider.updateImageNote(
-                                        note.id,
-                                        index,
-                                        _imageNoteControllers[index]?.text ?? '',
-                                      );
-                                    }
-                                  },
-                                  child: TextField(
-                                    controller: _imageNoteControllers[index],
-                                    maxLines: null,
-                                    minLines: 2,
-                                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-                                    decoration: InputDecoration(
-                                      hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
-                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                                      filled: true,
-                                      fillColor: Colors.white.withOpacity(0.05),
-                                      contentPadding: const EdgeInsets.all(12),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: const BorderSide(color: Colors.white12),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
-                                      ),
-                                    ),
-                                    onChanged: (val) {
-                                      provider.updateImageNote(note.id, index, val);
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
 
                           // v Bilgi Kartları Collapsible Accordion Button
