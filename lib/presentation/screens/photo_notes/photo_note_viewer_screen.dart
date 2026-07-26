@@ -1181,7 +1181,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                                   const SizedBox(width: 6),
                                                   Expanded(
                                                     child: Text(
-                                                      fc.question,
+                                                      fc.frontText,
                                                       style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
                                                     ),
                                                   ),
@@ -1194,7 +1194,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                                   const SizedBox(width: 6),
                                                   Expanded(
                                                     child: Text(
-                                                      fc.answer,
+                                                      fc.backText,
                                                       style: const TextStyle(color: Colors.white70, fontSize: 12),
                                                     ),
                                                   ),

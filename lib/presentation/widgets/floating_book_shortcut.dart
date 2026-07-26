@@ -461,6 +461,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   itemCount: totalImages,
                   itemBuilder: (context, index) {
                     final imgPath = note.imagePaths[index];
+                    final noteFlashcards = provider.getFlashcardsForNote(note.id);
                     final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
                         ? note.imageNotes[index]
                         : (index == 0 ? note.note : '');
@@ -589,7 +590,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        "v VKartlar (${note.flashcards.length} Kart)",
+                                        "v VKartlar (${noteFlashcards.length} Kart)",
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
@@ -612,14 +613,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                 borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
                                 border: Border.all(color: AppTheme.neonPurple.withValues(alpha: 0.4)),
                               ),
-                              child: note.flashcards.isEmpty
+                              child: noteFlashcards.isEmpty
                                   ? Text('Henüz bilgi kartı eklenmemiş.', style: TextStyle(fontSize: 10, color: AppTheme.textMuted))
                                   : Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: note.flashcards.map((fc) => Padding(
+                                      children: noteFlashcards.map((fc) => Padding(
                                         padding: const EdgeInsets.only(bottom: 4.0),
                                         child: Text(
-                                          '• ${fc.question}: ${fc.answer}',
+                                          '• ${fc.frontText}: ${fc.backText}',
                                           style: TextStyle(fontSize: 9, color: AppTheme.textPrimary),
                                         ),
                                       )).toList(),
