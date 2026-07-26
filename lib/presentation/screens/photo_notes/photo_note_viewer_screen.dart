@@ -106,20 +106,25 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     _insertSymbolToSection(imageIndex, sectionIndex, symbol, note, provider);
   }
 
+  final Map<int, String> _localImageNotes = {};
+
   List<String> _parseSections(String rawText) {
     if (rawText.isEmpty) return [];
     return rawText.split('\n---\n');
   }
 
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
-    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
-    final sections = _parseSections(rawText);
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final sections = _parseSections(currentText);
     sections.add(' ');
     final newSecIndex = sections.length - 1;
     final secKey = '${imageIndex}_$newSecIndex';
     final updatedText = sections.join('\n---\n');
 
+    _localImageNotes[imageIndex] = updatedText;
     _sectionControllers[secKey] = TextEditingController(text: ' ');
+
     setState(() {
       _activeFocusedSecKey = secKey;
       _focusedNoteIndexes.add(secKey.hashCode);
@@ -129,12 +134,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   }
 
   void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
-    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
-    final sections = _parseSections(rawText);
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final sections = _parseSections(currentText);
     if (sectionIndex >= 0 && sectionIndex < sections.length) {
       sections.removeAt(sectionIndex);
       _sectionControllers.remove('${imageIndex}_$sectionIndex');
       final updatedText = sections.join('\n---\n');
+      _localImageNotes[imageIndex] = updatedText;
+      setState(() {});
       provider.updateImageNote(note.id, imageIndex, updatedText);
     }
   }
@@ -162,13 +170,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   }
 
   void _updateSectionText(int imageIndex, int sectionIndex, String newSectionText, PhotoNote note, PhotoNoteProvider provider) {
-    final rawText = (imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : '');
-    final sections = _parseSections(rawText);
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final sections = _parseSections(currentText);
     while (sections.length <= sectionIndex) {
       sections.add('');
     }
     sections[sectionIndex] = newSectionText;
     final updatedText = sections.join('\n---\n');
+    _localImageNotes[imageIndex] = updatedText;
     provider.updateImageNote(note.id, imageIndex, updatedText);
   }
 
@@ -668,6 +678,222 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       styleOverride: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF14B8A6)),
                     ),
                     onPressed: () => _showAddEditFlashcardDialogForNote(context, note),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int index = 0}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final noteFlashcards = context.watch<PhotoNoteProvider>().flashcards;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E293B),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(color: Colors.black54, blurRadius: 16, spreadRadius: 4),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Handle Bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  // Header Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Görsele Özel Bilgi Kartları (${noteFlashcards.length})",
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+                              ),
+                              Text(
+                                note.title,
+                                style: const TextStyle(color: Colors.white60, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Content Body
+                  Expanded(
+                    child: noteFlashcards.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.style_outlined, color: Colors.white38, size: 48),
+                                const SizedBox(height: 12),
+                                const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF14B8A6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  ),
+                                  icon: const Icon(Icons.add, color: Colors.white, size: 18),
+                                  label: const Text('İlk Kartı Ekle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _openFlashcardsSheet(context, note);
+                                  },
+                                ),
+                              ],
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Group Header Card
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.folder_rounded, color: Color(0xFF14B8A6), size: 20),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            _customAccordionTitles[index] ?? 'Genel Bilgiler',
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                          ),
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          Text(
+                                            '${noteFlashcards.length} Kart',
+                                            style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                            padding: EdgeInsets.zero,
+                                            icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 16),
+                                            onPressed: () {
+                                              Navigator.pop(ctx);
+                                              _editAccordionTitle(index);
+                                            },
+                                          ),
+                                          IconButton(
+                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                                            padding: EdgeInsets.zero,
+                                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 20),
+                                            onPressed: () {
+                                              Navigator.pop(ctx);
+                                              _openFlashcardsSheet(context, note);
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
+                                // 2-Column Cards Grid
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: 10,
+                                    mainAxisSpacing: 10,
+                                    childAspectRatio: 1.2,
+                                  ),
+                                  itemCount: noteFlashcards.length,
+                                  itemBuilder: (context, fcIndex) {
+                                    final card = noteFlashcards[fcIndex];
+                                    return FlipCardWidget(
+                                      flashcard: card,
+                                      onOptionsTap: () {
+                                        Navigator.pop(ctx);
+                                        _showNoteFlashcardOptions(context, card, note);
+                                      },
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Bottom Action Button "+ Yeni Kart Başlığı / Konu Grubu Ekle"
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF14B8A6),
+                        side: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.playlist_add_rounded, size: 22),
+                      label: const Text(
+                        'Yeni Kart Başlığı / Konu Grubu Ekle',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _openFlashcardsSheet(context, note);
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -1420,128 +1646,44 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               },
                             ),
 
-                          // v Bilgi Kartları Collapsible Accordion Button with Editable Title
+                          // v Bilgi Kartları Bottom Sheet Trigger Button
                           GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedVKartIndexes.contains(index)) {
-                                  _expandedVKartIndexes.remove(index);
-                                } else {
-                                  _expandedVKartIndexes.add(index);
-                                }
-                              });
-                            },
+                            onTap: () => _openFlashcardsBottomSheet(context, note, index: index),
                             child: Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1E293B),
-                                borderRadius: BorderRadius.vertical(
-                                  bottom: Radius.circular(_expandedVKartIndexes.contains(index) ? 0 : 16),
-                                ),
-                                border: const Border(top: BorderSide(color: Colors.white10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF1E293B),
+                                borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
+                                border: Border(top: BorderSide(color: Colors.white10)),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Row(
                                     children: [
-                                      Icon(
-                                        _expandedVKartIndexes.contains(index)
-                                            ? Icons.keyboard_arrow_up_rounded
-                                            : Icons.keyboard_arrow_down_rounded,
-                                        color: const Color(0xFF14B8A6),
-                                        size: 22,
-                                      ),
+                                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 20),
                                       const SizedBox(width: 8),
                                       Text(
                                         "v ${_customAccordionTitles[index] ?? 'Bilgi Kartları'} (${noteFlashcards.length} Kart)",
                                         style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
                                       ),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                        padding: EdgeInsets.zero,
-                                        icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 16),
-                                        tooltip: 'Başlığı Değiştir',
-                                        onPressed: () => _editAccordionTitle(index),
-                                      ),
                                     ],
                                   ),
-                                  Row(
+                                  const Row(
                                     children: [
-                                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 16),
-                                      const SizedBox(width: 4),
                                       Text(
-                                        _expandedVKartIndexes.contains(index) ? 'Kapat' : 'Aç',
-                                        style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
+                                        'Aç',
+                                        style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
                                       ),
+                                      SizedBox(width: 4),
+                                      Icon(Icons.arrow_forward_ios_rounded, color: Colors.white54, size: 12),
                                     ],
                                   ),
                                 ],
                               ),
                             ),
                           ),
-
-                          if (_expandedVKartIndexes.contains(index))
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A),
-                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
-                              ),
-                              child: noteFlashcards.isEmpty
-                                  ? Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 12)),
-                                        TextButton.icon(
-                                          icon: const Icon(Icons.add, size: 16, color: Color(0xFF14B8A6)),
-                                          label: const Text('Ekle', style: TextStyle(color: Color(0xFF14B8A6), fontSize: 12)),
-                                          onPressed: () => _openFlashcardsSheet(context, note),
-                                        ),
-                                      ],
-                                    )
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            const Text(
-                                              'Ön yüz / Arka yüz için kartın üzerine dokunun:',
-                                              style: TextStyle(color: Colors.white70, fontSize: 11, fontStyle: FontStyle.italic),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF14B8A6), size: 18),
-                                              onPressed: () => _openFlashcardsSheet(context, note),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 8),
-                                        GridView.builder(
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: 2,
-                                            crossAxisSpacing: 8,
-                                            mainAxisSpacing: 8,
-                                            childAspectRatio: 1.3,
-                                          ),
-                                          itemCount: noteFlashcards.length,
-                                          itemBuilder: (context, fcIndex) {
-                                            final card = noteFlashcards[fcIndex];
-                                            return FlipCardWidget(
-                                              flashcard: card,
-                                              onOptionsTap: () => _showNoteFlashcardOptions(context, card, note),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                            ),
                         ],
                       ),
                     );
@@ -1549,56 +1691,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 ),
               ),
 
-              // Global Symbol Bar under Top AppBar (Appears on Note Field Focus)
-              if (_activeFocusedSecKey != null)
-                Positioned(
-                  top: 60,
-                  left: 0,
-                  right: 0,
-                  child: SafeArea(
-                    top: true,
-                    bottom: false,
-                    child: Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B).withValues(alpha: 0.96),
-                        border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3)),
-                        ],
-                      ),
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _quickSymbols.length,
-                        itemBuilder: (context, sIndex) {
-                          final sym = _quickSymbols[sIndex];
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: InkWell(
-                              onTap: () => _insertSymbolToActiveField(sym, note, provider),
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                                ),
-                                child: Text(
-                                  sym,
-                                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Top AppBar
+              // Top AppBar + Physically Attached Dynamic Symbol Bar
               Positioned(
                 top: 0,
                 left: 0,
@@ -1607,62 +1700,106 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   top: true,
                   bottom: false,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A).withOpacity(0.95),
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.98),
                       border: const Border(bottom: BorderSide(color: Colors.white12)),
                       boxShadow: const [
                         BoxShadow(color: Colors.black54, blurRadius: 8),
                       ],
                     ),
-                    child: Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            note.title,
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  note.title,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 26),
+                                tooltip: 'Yeni Görsel Ekle',
+                                onPressed: () => _pickAndAddExtraImage(note),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  Icons.style_rounded,
+                                  color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                                  size: 24,
+                                ),
+                                tooltip: 'Bilgi Kartları',
+                                onPressed: () => _openFlashcardsBottomSheet(context, note, index: 0),
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
+                                  color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
+                                  size: 24,
+                                ),
+                                tooltip: 'Genel Metin Notu',
+                                onPressed: () => _openNoteTextScreen(context, note),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.share_rounded, color: Colors.white, size: 22),
+                                tooltip: 'Paylaş',
+                                onPressed: () => _shareImage(note),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                                tooltip: 'Sil',
+                                onPressed: () => _deleteNote(context, note),
+                              ),
+                            ],
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 26),
-                          tooltip: 'Yeni Görsel Ekle',
-                          onPressed: () => _pickAndAddExtraImage(note),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.style_rounded,
-                            color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                            size: 24,
+
+                        // Dynamic Symbol Bar physically attached below Top Row
+                        if (_activeFocusedSecKey != null)
+                          Container(
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF1E293B),
+                              border: Border(top: BorderSide(color: Colors.white10), bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
+                            ),
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _quickSymbols.length,
+                              itemBuilder: (context, sIndex) {
+                                final sym = _quickSymbols[sIndex];
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: InkWell(
+                                    onTap: () => _insertSymbolToActiveField(sym, note, provider),
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                      ),
+                                      child: Text(
+                                        sym,
+                                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                          tooltip: 'Bilgi Kartları',
-                          onPressed: () => _openFlashcardsSheet(context, note),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
-                            color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                            size: 24,
-                          ),
-                          tooltip: 'Genel Metin Notu',
-                          onPressed: () => _openNoteTextScreen(context, note),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.share_rounded, color: Colors.white, size: 22),
-                          tooltip: 'Paylaş',
-                          onPressed: () => _shareImage(note),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                          tooltip: 'Sil',
-                          onPressed: () => _deleteNote(context, note),
-                        ),
                       ],
                     ),
                   ),
