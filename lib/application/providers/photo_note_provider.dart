@@ -278,6 +278,34 @@ class PhotoNoteProvider extends ChangeNotifier {
     await loadPhotoNotes();
   }
 
+  /// Replace an existing image at imageIndex in a photo note with a new image file
+  Future<void> replaceImageInNote(String noteId, int imageIndex, File newImageFile) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final paths = List<String>.from(existingNote.imagePaths);
+    if (imageIndex < 0 || imageIndex >= paths.length) return;
+
+    final directory = await getApplicationDocumentsDirectory();
+    final ext = newImageFile.path.split('.').last;
+    final timeStamp = DateTime.now().millisecondsSinceEpoch;
+    final targetPath = '${directory.path}/photonote_${noteId}_replaced_${timeStamp}_$imageIndex.$ext';
+    final saved = await newImageFile.copy(targetPath);
+
+    paths[imageIndex] = saved.path;
+
+    final updatedNote = existingNote.copyWith(
+      imagePath: paths.first,
+      imagePaths: paths,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
+  }
+
   /// Update note text for a specific image index in a photo note
   Future<void> updateImageNote(String noteId, int imageIndex, String noteText) async {
     final box = Hive.box(_boxName);

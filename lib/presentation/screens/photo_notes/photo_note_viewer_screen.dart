@@ -754,6 +754,47 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  void _showReplaceImagePicker(BuildContext context, PhotoNote note, int imageIndex) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: Color(0xFF14B8A6)),
+              title: const Text('Galeriden Yeni Görsel Seç', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.gallery);
+                if (picked != null) {
+                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFF38BDF8)),
+              title: const Text('Kameradan Yeni Fotoğraf Çek', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.camera);
+                if (picked != null) {
+                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showNoteFlashcardOptions(BuildContext context, Flashcard card, PhotoNote note) {
     showModalBottomSheet(
       context: context,
@@ -964,79 +1005,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header Badge for Image Index
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: cardColor.withOpacity(0.2),
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                              border: Border(bottom: BorderSide(color: cardColor.withOpacity(0.3))),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: cardColor,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        'Görsel ${index + 1}',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      '$totalImages görselden ${index + 1}. sayfa',
-                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 22),
-                                      tooltip: 'Tam Ekran Büyüt',
-                                      onPressed: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                                    ),
-                                    if (totalImages > 1)
-                                      IconButton(
-                                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                                        tooltip: 'Bu Görseli Sil',
-                                        onPressed: () {
-                                          showDialog(
-                                            context: context,
-                                            builder: (ctx) => AlertDialog(
-                                              backgroundColor: const Color(0xFF1E293B),
-                                              title: const Text('Görseli Sil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                              content: Text('${index + 1}. görsel karttan silinecektir. Emin misiniz?', style: const TextStyle(color: Colors.white70)),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () => Navigator.pop(ctx),
-                                                  child: const Text('İptal', style: TextStyle(color: Colors.grey)),
-                                                ),
-                                                TextButton(
-                                                  onPressed: () async {
-                                                    Navigator.pop(ctx);
-                                                    await provider.removeImageFromNote(note.id, index);
-                                                    _imageNoteControllers.remove(index);
-                                                  },
-                                                  child: const Text('Sil', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-
                           // Image Container (Huge full-width display, tap opens Tam Ekran)
                           GestureDetector(
                             onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
@@ -1070,23 +1038,54 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                   Positioned(
                                     top: 8,
                                     right: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.6),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(Icons.zoom_in_rounded, size: 13, color: Colors.white70),
-                                          SizedBox(width: 4),
-                                          Text(
-                                            'Tam Ekran',
-                                            style: TextStyle(color: Colors.white70, fontSize: 10),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        GestureDetector(
+                                          onTap: () => _showReplaceImagePicker(context, note, index),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.7),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6)),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.published_with_changes_rounded, size: 13, color: Color(0xFF14B8A6)),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'Görseli Değiştir',
+                                                  style: TextStyle(color: Color(0xFF14B8A6), fontSize: 10, fontWeight: FontWeight.bold),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        GestureDetector(
+                                          onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.6),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.zoom_in_rounded, size: 13, color: Colors.white70),
+                                                SizedBox(width: 4),
+                                                Text(
+                                                  'Tam Ekran',
+                                                  style: TextStyle(color: Colors.white70, fontSize: 10),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],
@@ -1096,67 +1095,67 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
                           // Per-Image Note Box
                           Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF0F172A),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Görsel ${index + 1} İçin Not',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Focus(
-                                    onFocusChange: (hasFocus) {
-                                      if (hasFocus) {
-                                        _focusedNoteIndexes.add(index);
-                                      } else {
-                                        _focusedNoteIndexes.remove(index);
-                                        provider.updateImageNote(
-                                          note.id,
-                                          index,
-                                          _imageNoteControllers[index]?.text ?? '',
-                                        );
-                                      }
-                                    },
-                                    child: TextField(
-                                      controller: _imageNoteControllers[index],
-                                      maxLines: null,
-                                      minLines: 2,
-                                      style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-                                      decoration: InputDecoration(
-                                        hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
-                                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                                        filled: true,
-                                        fillColor: Colors.white.withOpacity(0.05),
-                                        contentPadding: const EdgeInsets.all(12),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(10),
-                                          borderSide: const BorderSide(color: Colors.white12),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(10),
-                                          borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
-                                        ),
-                                      ),
-                                      onChanged: (val) {
-                                        provider.updateImageNote(note.id, index, val);
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF0F172A),
                             ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 20),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Görsel ${index + 1} İçin Not',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                Focus(
+                                  onFocusChange: (hasFocus) {
+                                    if (hasFocus) {
+                                      _focusedNoteIndexes.add(index);
+                                    } else {
+                                      _focusedNoteIndexes.remove(index);
+                                      provider.updateImageNote(
+                                        note.id,
+                                        index,
+                                        _imageNoteControllers[index]?.text ?? '',
+                                      );
+                                    }
+                                  },
+                                  child: TextField(
+                                    controller: _imageNoteControllers[index],
+                                    maxLines: null,
+                                    minLines: 2,
+                                    style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                                    decoration: InputDecoration(
+                                      hintText: 'Görsel ${index + 1} için özel notunuzu yazın...',
+                                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                                      filled: true,
+                                      fillColor: Colors.white.withOpacity(0.05),
+                                      contentPadding: const EdgeInsets.all(12),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Colors.white12),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                                      ),
+                                    ),
+                                    onChanged: (val) {
+                                      provider.updateImageNote(note.id, index, val);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
-                          // v VKartlar Collapsible Accordion Button
+                          // v Bilgi Kartları Collapsible Accordion Button
                           GestureDetector(
                             onTap: () {
                               setState(() {
@@ -1191,7 +1190,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       ),
                                       const SizedBox(width: 8),
                                       Text(
-                                        "v VKartlar (${noteFlashcards.length} Bilgi Kartı)",
+                                        "v Bilgi Kartları (${noteFlashcards.length} Kart)",
                                         style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
                                       ),
                                     ],
@@ -1234,47 +1233,40 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     )
                                   : Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: noteFlashcards.map((fc) {
-                                        return Container(
-                                          margin: const EdgeInsets.only(bottom: 8),
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.05),
-                                            borderRadius: BorderRadius.circular(8),
-                                            border: Border.all(color: Colors.white10),
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Ön yüz / Arka yüz için kartın üzerine dokunun:',
+                                              style: TextStyle(color: Colors.white70, fontSize: 11, fontStyle: FontStyle.italic),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF14B8A6), size: 18),
+                                              onPressed: () => _openFlashcardsSheet(context, note),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        GridView.builder(
+                                          shrinkWrap: true,
+                                          physics: const NeverScrollableScrollPhysics(),
+                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            crossAxisSpacing: 8,
+                                            mainAxisSpacing: 8,
+                                            childAspectRatio: 1.3,
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  const Icon(Icons.help_outline_rounded, size: 14, color: Color(0xFF14B8A6)),
-                                                  const SizedBox(width: 6),
-                                                  Expanded(
-                                                    child: Text(
-                                                      fc.frontText,
-                                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Row(
-                                                children: [
-                                                  const Icon(Icons.question_answer_rounded, size: 14, color: Color(0xFF38BDF8)),
-                                                  const SizedBox(width: 6),
-                                                  Expanded(
-                                                    child: Text(
-                                                      fc.backText,
-                                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      }).toList(),
+                                          itemCount: noteFlashcards.length,
+                                          itemBuilder: (context, fcIndex) {
+                                            final card = noteFlashcards[fcIndex];
+                                            return FlipCardWidget(
+                                              flashcard: card,
+                                              onOptionsTap: () => _showNoteFlashcardOptions(context, card, note),
+                                            );
+                                          },
+                                        ),
+                                      ],
                                     ),
                             ),
                         ],

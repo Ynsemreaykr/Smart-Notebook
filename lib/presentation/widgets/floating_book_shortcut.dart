@@ -529,6 +529,47 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     );
   }
 
+  void _showReplaceImagePicker(BuildContext context, PhotoNote note, int imageIndex) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_rounded, color: Color(0xFF14B8A6)),
+              title: const Text('Galeriden Yeni Görsel Seç', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.gallery);
+                if (picked != null) {
+                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFF38BDF8)),
+              title: const Text('Kameradan Yeni Fotoğraf Çek', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.camera);
+                if (picked != null) {
+                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Visual Cards Menu (Level 1: Folders, Level 2: 2-Column Cards Grid, Level 3: Card Details)
   Widget _buildVisualCardsMenu() {
     final provider = context.watch<PhotoNoteProvider>();
@@ -592,23 +633,6 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Header badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: const BoxDecoration(
-                              color: Colors.white10,
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Görsel ${index + 1} / $totalImages',
-                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.neonBlue),
-                                ),
-                              ],
-                            ),
-                          ),
                           // Image (Tap opens Tam Ekran with note overlay)
                           GestureDetector(
                             onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
@@ -621,21 +645,49 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                   children: [
                                     _buildImageWidget(imgPath),
                                     Positioned(
-                                      bottom: 4, right: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.zoom_in_rounded, size: 10, color: Colors.white),
-                                            SizedBox(width: 3),
-                                            Text('Tam Ekran', style: TextStyle(fontSize: 8, color: Colors.white70)),
-                                          ],
-                                        ),
+                                      top: 4, right: 4,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          GestureDetector(
+                                            onTap: () => _showReplaceImagePicker(context, note, index),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(alpha: 0.7),
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6)),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.published_with_changes_rounded, size: 9, color: Color(0xFF14B8A6)),
+                                                  SizedBox(width: 2),
+                                                  Text(
+                                                    'Görseli Değiştir',
+                                                    style: TextStyle(fontSize: 8, color: Color(0xFF14B8A6), fontWeight: FontWeight.bold),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(alpha: 0.6),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.zoom_in_rounded, size: 9, color: Colors.white),
+                                                SizedBox(width: 2),
+                                                Text('Tam Ekran', style: TextStyle(fontSize: 8, color: Colors.white70)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
@@ -643,8 +695,8 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ),
                             ),
                           ),
-                          // Per-Image Note (Togglable on Image Tap)
-                          if (_showMiniNoteSection && imageNoteText.isNotEmpty)
+                          // Per-Image Note
+                          if (imageNoteText.isNotEmpty)
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.all(6),
@@ -657,7 +709,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ),
                             ),
 
-                          // Collapsible VKart (v sembollü akordiyon buton)
+                          // Collapsible Bilgi Kartları (v sembollü akordiyon buton)
                           GestureDetector(
                             onTap: () {
                               setState(() {
@@ -692,7 +744,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        "v VKartlar (${noteFlashcards.length} Kart)",
+                                        "v Bilgi Kartları (${noteFlashcards.length} Kart)",
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
@@ -717,15 +769,22 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ),
                               child: noteFlashcards.isEmpty
                                   ? Text('Henüz bilgi kartı eklenmemiş.', style: TextStyle(fontSize: 10, color: AppTheme.textMuted))
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: noteFlashcards.map((fc) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 4.0),
-                                        child: Text(
-                                          '• ${fc.frontText}: ${fc.backText}',
-                                          style: TextStyle(fontSize: 9, color: AppTheme.textPrimary),
-                                        ),
-                                      )).toList(),
+                                  : GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        crossAxisSpacing: 6,
+                                        mainAxisSpacing: 6,
+                                        childAspectRatio: 1.2,
+                                      ),
+                                      itemCount: noteFlashcards.length,
+                                      itemBuilder: (context, fcIndex) {
+                                        final card = noteFlashcards[fcIndex];
+                                        return FlipCardWidget(
+                                          flashcard: card,
+                                        );
+                                      },
                                     ),
                             ),
                         ],
