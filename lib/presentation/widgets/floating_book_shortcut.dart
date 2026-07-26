@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'flip_card_widget.dart';
 import '../../application/providers/photo_note_provider.dart';
 import '../../domain/models/photo_note.dart';
 import '../theme/app_theme.dart';
