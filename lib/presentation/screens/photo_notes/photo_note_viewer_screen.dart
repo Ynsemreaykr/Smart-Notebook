@@ -825,6 +825,122 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  void _showFullScreenImage(BuildContext context, String imgPath, int index, int totalImages, PhotoNote note) {
+    final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
+        ? note.imageNotes[index]
+        : (index == 0 ? note.note : '');
+
+    bool showNoteOverlay = true;
+
+    showDialog(
+      context: context,
+      useSafeArea: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setOverlayState) {
+            return Scaffold(
+              backgroundColor: Colors.black,
+              body: Stack(
+                children: [
+                  // Full Screen Zoomable & Pannable Image X
+                  GestureDetector(
+                    onTap: () {
+                      setOverlayState(() {
+                        showNoteOverlay = !showNoteOverlay;
+                      });
+                    },
+                    child: Center(
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Image.file(
+                          File(imgPath),
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          height: double.infinity,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Top Header Bar
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        color: Colors.black.withValues(alpha: 0.6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${note.title} • Görsel ${index + 1} / $totalImages',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Bottom Semi-Transparent Note Overlay OVER Image X (Arka plan X olacak şekilde)
+                  if (showNoteOverlay && imageNoteText.isNotEmpty)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        top: false,
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black80, blurRadius: 12, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Görsel ${index + 1} İçin Not',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                imageNoteText,
+                                style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<PhotoNoteProvider>(
@@ -922,7 +1038,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     IconButton(
                                       icon: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 22),
                                       tooltip: 'Tam Ekran Büyüt',
-                                      onPressed: () => _showFullScreenImage(context, imgPath, index, totalImages),
+                                      onPressed: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                                     ),
                                     if (totalImages > 1)
                                       IconButton(
@@ -959,14 +1075,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ),
                           ),
 
-                          // Image Container (Tap once to toggle note section, double tap to zoom)
+                          // Image Container (Tap opens Tam Ekran with note overlay)
                           GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _showNotesSection = !_showNotesSection;
-                              });
-                            },
-                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages),
+                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             child: Container(
                               width: double.infinity,
                               constraints: BoxConstraints(maxHeight: _showNotesSection ? 450 : 640),

@@ -413,8 +413,124 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     );
   }
 
-  /// Visual Cards Menu (Folders -> Folder Notes -> Note Detail)
-  Widget _buildVisualCardsMenu() {
+  void _showFullScreenImage(BuildContext context, String imgPath, int index, int totalImages, PhotoNote note) {
+    final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
+        ? note.imageNotes[index]
+        : (index == 0 ? note.note : '');
+
+    bool showNoteOverlay = true;
+
+    showDialog(
+      context: context,
+      useSafeArea: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setOverlayState) {
+            return Scaffold(
+              backgroundColor: Colors.black,
+              body: Stack(
+                children: [
+                  // Full Screen Zoomable & Pannable Image X
+                  GestureDetector(
+                    onTap: () {
+                      setOverlayState(() {
+                        showNoteOverlay = !showNoteOverlay;
+                      });
+                    },
+                    child: Center(
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Image.file(
+                          File(imgPath),
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          height: double.infinity,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Top Header Bar
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        color: Colors.black.withValues(alpha: 0.6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${note.title} • Görsel ${index + 1} / $totalImages',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+                              onPressed: () => Navigator.pop(ctx),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Bottom Semi-Transparent Note Overlay OVER Image X (Arka plan X görseli)
+                  if (showNoteOverlay && imageNoteText.isNotEmpty)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        top: false,
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black80, blurRadius: 12, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 18),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Görsel ${index + 1} İçin Not',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                imageNoteText,
+                                style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Visual Notes View (Level 1: Folders, Level 2: 2-Column Cards Grid, Level 3: Card Details)
+  Widget _buildVisualNotesView() {
     final provider = context.watch<PhotoNoteProvider>();
 
     // Level 3: Card Detail Preview with Vertical Scroll & Per-Image Notes
@@ -493,17 +609,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ],
                             ),
                           ),
-                          // Image (Single tap toggles note, double tap opens overlay)
+                          // Image (Tap opens Tam Ekran with note overlay)
                           GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _showMiniNoteSection = !_showMiniNoteSection;
-                              });
-                            },
-                            onDoubleTap: () {
-                              _zoomTransformationController.value = Matrix4.identity();
-                              setState(() => _zoomedImagePath = imgPath);
-                            },
+                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             child: ClipRRect(
                               child: Container(
                                 constraints: BoxConstraints(maxHeight: _showMiniNoteSection ? 175 : 270),
