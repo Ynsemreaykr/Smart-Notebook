@@ -353,10 +353,50 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     );
   }
 
+  void _nextImageOrCard(List<PhotoNote> folderNotes, PhotoNote currentNote, int currentImgIndex) {
+    final totalImages = currentNote.imagePaths.length;
+    if (currentImgIndex < totalImages - 1) {
+      setState(() => _previewImageIndex = currentImgIndex + 1);
+      return;
+    }
+
+    final cardIndex = folderNotes.indexWhere((n) => n.id == currentNote.id);
+    if (cardIndex != -1 && cardIndex < folderNotes.length - 1) {
+      final nextCard = folderNotes[cardIndex + 1];
+      setState(() {
+        _selectedPhotoNote = nextCard;
+        _previewImageIndex = 0;
+      });
+    }
+  }
+
+  void _prevImageOrCard(List<PhotoNote> folderNotes, PhotoNote currentNote, int currentImgIndex) {
+    if (currentImgIndex > 0) {
+      setState(() => _previewImageIndex = currentImgIndex - 1);
+      return;
+    }
+
+    final cardIndex = folderNotes.indexWhere((n) => n.id == currentNote.id);
+    if (cardIndex > 0) {
+      final prevCard = folderNotes[cardIndex - 1];
+      setState(() {
+        _selectedPhotoNote = prevCard;
+        _previewImageIndex = prevCard.imagePaths.length > 0 ? prevCard.imagePaths.length - 1 : 0;
+      });
+    }
+  }
+
   Widget _buildFullWindowImagePreviewInMiniWindow(PhotoNote note, PhotoNoteProvider provider) {
     final index = _previewImageIndex ?? 0;
     final totalImages = note.imagePaths.length;
     final imgPath = (index < totalImages) ? note.imagePaths[index] : note.imagePath;
+
+    final categoryFilter = _selectedSubUnit != null
+        ? '$_selectedCategoryFolder / $_selectedSubUnit'
+        : _selectedCategoryFolder;
+    final folderNotes = (_selectedCategoryFolder == null || _selectedCategoryFolder == 'Tümü')
+        ? provider.photoNotes
+        : provider.photoNotes.where((n) => n.category.trim() == categoryFilter?.trim() || n.category.startsWith('$categoryFilter / ')).toList();
 
     final imageNoteText = _localImageNotes[index] ??
         ((index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
@@ -400,7 +440,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                   ),
                 ),
-                // Kart / Bilgi Kartları Sembolü (Right next to Görsel 1 / 1)
+                // Kart / Bilgi Kartları Sembolü
                 IconButton(
                   constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                   padding: EdgeInsets.zero,
@@ -424,29 +464,66 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
             ),
           ),
 
-          // Main Zoomable Image & Saydam (Semi-Transparent) Note Overlay
+          // Main Zoomable Image & Swipe Gestures & Saydam Note Overlay
           Expanded(
             child: Stack(
               children: [
-                Center(
-                  child: InteractiveViewer(
-                    minScale: 0.8,
-                    maxScale: 3.5,
-                    child: _buildImageWidget(imgPath),
+                GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity != null) {
+                      if (details.primaryVelocity! < -150) {
+                        _nextImageOrCard(folderNotes, note, index);
+                      } else if (details.primaryVelocity! > 150) {
+                        _prevImageOrCard(folderNotes, note, index);
+                      }
+                    }
+                  },
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 0.8,
+                      maxScale: 3.5,
+                      child: _buildImageWidget(imgPath),
+                    ),
                   ),
                 ),
 
-                // Bottom Semi-Transparent Scrollable Note Panel (Kayan saydam not penceresi)
+                // Left Navigation Button
+                Positioned(
+                  left: 4,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_left_rounded, color: Colors.white60, size: 28),
+                      onPressed: () => _prevImageOrCard(folderNotes, note, index),
+                    ),
+                  ),
+                ),
+
+                // Right Navigation Button
+                Positioned(
+                  right: 4,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white60, size: 28),
+                      onPressed: () => _nextImageOrCard(folderNotes, note, index),
+                    ),
+                  ),
+                ),
+
+                // Bottom Semi-Transparent Scrollable Note Panel (Without "Not Bölümü" headers)
                 if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
                   Positioned(
                     bottom: 8,
                     left: 8,
                     right: 8,
                     child: Container(
-                      constraints: const BoxConstraints(maxHeight: 145),
-                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.65), // Saydam (Semi-transparent)
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.65),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
                       ),
@@ -460,33 +537,23 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      _openFullScreenSectionEditor(context, index, 0, note, provider);
+                                    },
+                                    child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
                               for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
-                                if (sIndex > 0) const SizedBox(height: 6),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Not Bölümü ${sIndex + 1}',
-                                          style: const TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11),
-                                        ),
-                                      ],
-                                    ),
-                                    GestureDetector(
-                                      onTap: () {
-                                        _openFullScreenSectionEditor(context, index, sIndex, note, provider);
-                                      },
-                                      child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
+                                if (sIndex > 0) const SizedBox(height: 4),
                                 Text(
                                   noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
-                                  style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.3),
+                                  style: const TextStyle(color: Colors.white, fontSize: 10.5, height: 1.35),
                                 ),
                               ],
                             ],
