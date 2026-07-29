@@ -482,7 +482,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     child: InteractiveViewer(
                       minScale: 0.8,
                       maxScale: 3.5,
-                      child: _buildImageWidget(imgPath),
+                      child: _buildImageWidget(imgPath, fit: BoxFit.contain),
                     ),
                   ),
                 ),
@@ -513,14 +513,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   ),
                 ),
 
-                // Bottom Semi-Transparent Scrollable Note Panel (Without "Not Bölümü" headers)
+                // Bottom Semi-Transparent Scrollable Note Panel (Without "Not Bölümü" headers or "Düzenle" button)
                 if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
                   Positioned(
                     bottom: 8,
                     left: 8,
                     right: 8,
                     child: Container(
-                      constraints: const BoxConstraints(maxHeight: 120),
+                      constraints: const BoxConstraints(maxHeight: 110),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F172A).withValues(alpha: 0.65),
@@ -537,18 +537,6 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      _openFullScreenSectionEditor(context, index, 0, note, provider);
-                                    },
-                                    child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
                               for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
                                 if (sIndex > 0) const SizedBox(height: 4),
                                 Text(
@@ -750,7 +738,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     }
   }
 
-  Widget _buildImageWidget(String path) {
+  Widget _buildImageWidget(String path, {BoxFit fit = BoxFit.contain}) {
     if (path.isEmpty) {
       return Container(
         color: AppTheme.darkCardHigh,
@@ -760,7 +748,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return Image.network(
         path,
-        fit: BoxFit.cover,
+        fit: fit,
         errorBuilder: (_, __, ___) => Container(
           color: AppTheme.darkCardHigh,
           child: Icon(Icons.broken_image_rounded, color: AppTheme.textMuted, size: 24),
@@ -769,7 +757,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     }
     final file = File(path);
     if (file.existsSync()) {
-      return Image.file(file, fit: BoxFit.fitWidth, width: double.infinity);
+      return Image.file(file, fit: fit);
     }
     return Container(
       color: AppTheme.darkCardHigh,

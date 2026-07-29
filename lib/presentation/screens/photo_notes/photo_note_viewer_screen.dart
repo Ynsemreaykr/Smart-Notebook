@@ -1378,12 +1378,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
-  void _showFullScreenImage(BuildContext context, String imgPath, int index, int totalImages, PhotoNote note) {
-    final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
-        ? note.imageNotes[index]
-        : (index == 0 ? note.note : '');
+  void _showFullScreenImage(BuildContext context, String initialImgPath, int initialIndex, int totalImages, PhotoNote initialNote) {
+    final provider = context.read<PhotoNoteProvider>();
+    final folderNotes = (_selectedCategoryFolder == null || _selectedCategoryFolder == 'Tümü')
+        ? provider.photoNotes
+        : provider.photoNotes.where((n) => n.category.trim() == _selectedCategoryFolder!.trim() || n.category.startsWith('$_selectedCategoryFolder / ')).toList();
 
-    bool showNoteOverlay = true;
+    int currentImgIndex = initialIndex;
+    PhotoNote currentNote = initialNote;
 
     showDialog(
       context: context,
@@ -1391,27 +1393,96 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setOverlayState) {
+            final activeTotalImages = currentNote.imagePaths.length;
+            final currentImgPath = (currentImgIndex < activeTotalImages)
+                ? currentNote.imagePaths[currentImgIndex]
+                : (currentNote.imagePaths.isNotEmpty ? currentNote.imagePaths.first : initialImgPath);
+
+            final imageNoteText = (currentImgIndex < currentNote.imageNotes.length && currentNote.imageNotes[currentImgIndex].isNotEmpty)
+                ? currentNote.imageNotes[currentImgIndex]
+                : '';
+            final overlaySections = _parseSections(imageNoteText);
+
+            void nextImageOrCard() {
+              if (currentImgIndex < activeTotalImages - 1) {
+                setOverlayState(() => currentImgIndex = currentImgIndex + 1);
+                return;
+              }
+              final cardIndex = folderNotes.indexWhere((n) => n.id == currentNote.id);
+              if (cardIndex != -1 && cardIndex < folderNotes.length - 1) {
+                setOverlayState(() {
+                  currentNote = folderNotes[cardIndex + 1];
+                  currentImgIndex = 0;
+                });
+              }
+            }
+
+            void prevImageOrCard() {
+              if (currentImgIndex > 0) {
+                setOverlayState(() => currentImgIndex = currentImgIndex - 1);
+                return;
+              }
+              final cardIndex = folderNotes.indexWhere((n) => n.id == currentNote.id);
+              if (cardIndex > 0) {
+                final prevCard = folderNotes[cardIndex - 1];
+                setOverlayState(() {
+                  currentNote = prevCard;
+                  currentImgIndex = prevCard.imagePaths.isNotEmpty ? prevCard.imagePaths.length - 1 : 0;
+                });
+              }
+            }
+
             return Scaffold(
               backgroundColor: Colors.black,
               body: Stack(
                 children: [
-                  // Full Screen Zoomable & Pannable Image X
+                  // Full Screen Zoomable & Pannable Image with Swipe Gestures
                   GestureDetector(
-                    onTap: () {
-                      setOverlayState(() {
-                        showNoteOverlay = !showNoteOverlay;
-                      });
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity != null) {
+                        if (details.primaryVelocity! < -150) {
+                          nextImageOrCard();
+                        } else if (details.primaryVelocity! > 150) {
+                          prevImageOrCard();
+                        }
+                      }
                     },
                     child: Center(
                       child: InteractiveViewer(
                         minScale: 0.5,
                         maxScale: 4.0,
                         child: Image.file(
-                          File(imgPath),
+                          File(currentImgPath),
                           fit: BoxFit.contain,
                           width: double.infinity,
                           height: double.infinity,
                         ),
+                      ),
+                    ),
+                  ),
+
+                  // Left Navigation Button
+                  Positioned(
+                    left: 6,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: IconButton(
+                        icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 36),
+                        onPressed: prevImageOrCard,
+                      ),
+                    ),
+                  ),
+
+                  // Right Navigation Button
+                  Positioned(
+                    right: 6,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: IconButton(
+                        icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 36),
+                        onPressed: nextImageOrCard,
                       ),
                     ),
                   ),
@@ -1426,12 +1497,32 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         color: Colors.black.withValues(alpha: 0.6),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              '${note.title} • Görsel ${index + 1} / $totalImages',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            Expanded(
+                              child: Text(
+                                '${currentNote.title} • Görsel ${currentImgIndex + 1} / $activeTotalImages',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
                             ),
+                            // Bilgi Kartları Icon
+                            IconButton(
+                              icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
+                              tooltip: 'Bilgi Kartları',
+                              onPressed: () {
+                                _showFlashcardsBottomSheet(context, currentNote, cardIndex: currentImgIndex);
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            // Kalem / Edit Note Icon
+                            IconButton(
+                              icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
+                              tooltip: 'Notu Düzenle',
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _openFullScreenSectionEditor(context, currentImgIndex, 0, currentNote, provider);
+                              },
+                            ),
+                            const SizedBox(width: 4),
                             IconButton(
                               icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
                               onPressed: () => Navigator.pop(ctx),
@@ -1442,64 +1533,50 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                     ),
                   ),
 
-                  // Bottom Semi-Transparent Note Overlay OVER Image X (Arka plan X olacak şekilde)
-                  if (showNoteOverlay) ...[
-                    Builder(
-                      builder: (context) {
-                        final overlaySections = _parseSections(imageNoteText);
-                        if (overlaySections.isEmpty) return const SizedBox.shrink();
-
-                        return Positioned(
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          child: SafeArea(
-                            top: false,
-                            child: Container(
-                              margin: const EdgeInsets.all(16),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                                boxShadow: const [
-                                  BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
-                                ],
-                              ),
+                  // Bottom Semi-Transparent Scrollable Note Overlay Panel (Without "Not Bölümü" headers or "Düzenle" button)
+                  if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty)
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        top: false,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 140),
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            thickness: 3,
+                            radius: const Radius.circular(3),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 16),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          'Not Bölümü ${sIndex + 1}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
+                                    if (sIndex > 0) const SizedBox(height: 6),
                                     Text(
-                                      overlaySections[sIndex],
+                                      overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
                                       style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
                                     ),
-                                    if (sIndex < overlaySections.length - 1)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(vertical: 8),
-                                        child: Divider(color: Colors.white24, height: 1),
-                                      ),
                                   ],
                                 ],
                               ),
                             ),
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ],
                 ],
               ),
             );
