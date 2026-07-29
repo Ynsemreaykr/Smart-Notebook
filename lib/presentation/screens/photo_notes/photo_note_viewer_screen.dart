@@ -39,7 +39,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   bool _isZoomed = false;
   int _currentPage = 0;
   late PageController _pageController;
-  final TransformationController _transformationController = TransformationController();
+  final Map<int, TransformationController> _transformControllers = {};
   final ScrollController _verticalScrollController = ScrollController();
   final Map<int, TextEditingController> _imageNoteControllers = {};
   final Set<int> _focusedNoteIndexes = {};
@@ -406,17 +406,26 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
-    _transformationController.addListener(_onTransformationChanged);
     WakelockHelper.enable();
+  }
+
+  TransformationController _getTransformController(int page) {
+    return _transformControllers.putIfAbsent(page, () {
+      final ctrl = TransformationController();
+      ctrl.addListener(_onTransformationChanged);
+      return ctrl;
+    });
   }
 
   @override
   void dispose() {
     _autoScrollTimer?.cancel();
     WakelockHelper.disable();
-    _transformationController.removeListener(_onTransformationChanged);
+    for (final ctrl in _transformControllers.values) {
+      ctrl.removeListener(_onTransformationChanged);
+      ctrl.dispose();
+    }
     _pageController.dispose();
-    _transformationController.dispose();
     _verticalScrollController.dispose();
     for (final c in _imageNoteControllers.values) {
       c.dispose();
@@ -428,12 +437,33 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   }
 
   void _onTransformationChanged() {
-    final scale = _transformationController.value.getMaxScaleOnAxis();
+    // Check the current page's controller
+    final ctrl = _transformControllers[_currentPage];
+    if (ctrl == null) return;
+    final scale = ctrl.value.getMaxScaleOnAxis();
     final isZoomedNow = scale > 1.05;
     if (isZoomedNow != _isZoomed) {
       setState(() {
         _isZoomed = isZoomedNow;
       });
+    }
+  }
+
+  void _handleDoubleTap(TapDownDetails details, int pageIndex, BoxConstraints constraints) {
+    final ctrl = _getTransformController(pageIndex);
+    final currentScale = ctrl.value.getMaxScaleOnAxis();
+    if (currentScale > 1.05) {
+      // Already zoomed → reset to fit
+      ctrl.value = Matrix4.identity();
+    } else {
+      // Zoom in 2.5x centered on the tap point
+      final position = details.localPosition;
+      final x = -position.dx * 1.5;
+      final y = -position.dy * 1.5;
+      final zoomed = Matrix4.identity()
+        ..translate(x, y)
+        ..scale(2.5);
+      ctrl.value = zoomed;
     }
   }
 
@@ -1609,44 +1639,44 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
           body: Stack(
             children: [
               // Full Screen Zoomable & Pannable Image PageView with Swipe Gestures
-              GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  if (details.primaryVelocity != null) {
-                    if (details.primaryVelocity! < -150) {
-                      nextImageOrCard();
-                    } else if (details.primaryVelocity! > 150) {
-                      prevImageOrCard();
-                    }
-                  }
+              PageView.builder(
+                controller: _pageController,
+                // Disable swipe when zoomed so InteractiveViewer can pan freely
+                physics: _isZoomed ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
+                itemCount: totalImages,
+                onPageChanged: (page) {
+                  setState(() {
+                    _currentPage = page;
+                  });
                 },
-                child: PageView.builder(
-                  controller: _pageController,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: totalImages,
-                  onPageChanged: (page) {
-                    setState(() {
-                      _currentPage = page;
-                    });
-                  },
-                  itemBuilder: (context, idx) {
-                    final pPath = note.imagePaths[idx];
-                    return Center(
-                      child: InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 4.0,
-                        child: Image.file(
-                          File(pPath),
-                          fit: BoxFit.contain,
-                          width: double.infinity,
-                          height: double.infinity,
-                          errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                itemBuilder: (context, idx) {
+                  final pPath = note.imagePaths[idx];
+                  final ctrl = _getTransformController(idx);
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      return GestureDetector(
+                        onDoubleTapDown: (details) => _handleDoubleTap(details, idx, constraints),
+                        onDoubleTap: () {}, // required to trigger onDoubleTapDown
+                        child: InteractiveViewer(
+                          transformationController: ctrl,
+                          minScale: 0.8,
+                          maxScale: 5.0,
+                          panEnabled: true,
+                          scaleEnabled: true,
+                          child: Image.file(
+                            File(pPath),
+                            fit: BoxFit.contain,
+                            width: double.infinity,
+                            height: double.infinity,
+                            errorBuilder: (_, __, ___) => const Center(
+                              child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  );
+                },
               ),
 
               // Left Navigation Button
