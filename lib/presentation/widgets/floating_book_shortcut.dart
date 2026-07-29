@@ -436,57 +436,62 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   ),
                 ),
 
-                // Bottom Semi-Transparent Note Overlay Box (Saydam arka planlı not kutusu)
+                // Bottom Semi-Transparent Scrollable Note Panel (Kayan saydam not penceresi)
                 if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
                   Positioned(
                     bottom: 8,
                     left: 8,
                     right: 8,
                     child: Container(
-                      padding: const EdgeInsets.all(10),
+                      constraints: const BoxConstraints(maxHeight: 145),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.50), // Saydam (Semi-transparent)
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.65), // Saydam (Semi-transparent)
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
-                            if (sIndex > 0) const SizedBox(height: 6),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
+                      child: Scrollbar(
+                        thumbVisibility: true,
+                        thickness: 3,
+                        radius: const Radius.circular(3),
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                                if (sIndex > 0) const SizedBox(height: 6),
                                 Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Not Bölümü ${sIndex + 1}',
-                                      style: const TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Not Bölümü ${sIndex + 1}',
+                                          style: const TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                    GestureDetector(
+                                      onTap: () {
+                                        _openFullScreenSectionEditor(context, index, sIndex, note, provider);
+                                      },
+                                      child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
                                     ),
                                   ],
                                 ),
-                                if (sIndex == 0)
-                                  GestureDetector(
-                                    onTap: () {
-                                      _addNoteSection(index, note, provider);
-                                      _openFullScreenSectionEditor(context, index, 0, note, provider);
-                                    },
-                                    child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
-                                  ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
+                                  style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.3),
+                                ),
                               ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.3),
-                            ),
-                          ],
-                        ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -1127,6 +1132,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
     if (_showFlashcardsInMiniWindow && _selectedPhotoNote != null) {
       return _buildFlashcardsInMiniWindow(_selectedPhotoNote!, provider);
+    }
+
+    if (_expandedSectionImageIndex != null && _expandedSectionIndex != null && _selectedPhotoNote != null) {
+      return _buildExpandedSectionEditorInMiniWindow(_selectedPhotoNote!, provider);
     }
 
     if (_previewImageIndex != null && _selectedPhotoNote != null) {
