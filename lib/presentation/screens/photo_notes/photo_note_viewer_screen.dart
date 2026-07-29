@@ -978,7 +978,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                             icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 16),
                                             onPressed: () {
                                               Navigator.pop(ctx);
-                                              _editAccordionTitle(index);
+                                              _editAccordionTitle(index ?? 0);
                                             },
                                           ),
                                           IconButton(
