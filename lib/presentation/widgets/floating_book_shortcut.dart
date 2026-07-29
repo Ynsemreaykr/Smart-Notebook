@@ -619,8 +619,12 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   physics: const BouncingScrollPhysics(),
                   itemCount: totalImages,
                   itemBuilder: (context, index) {
-                    final imgPath = note.imagePaths[index];
-                    final noteFlashcards = provider.getFlashcardsForNote(note.id);
+                    final allNoteFlashcards = provider.getFlashcardsForNote(note.id);
+                    final targetGroup = 'Görsel ${index + 1} Kartları';
+                    final noteFlashcards = allNoteFlashcards.where((f) {
+                      final g = f.groupTitle.trim();
+                      return g == targetGroup || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
+                    }).toList();
                     final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
                         ? note.imageNotes[index]
                         : (index == 0 ? note.note : '');

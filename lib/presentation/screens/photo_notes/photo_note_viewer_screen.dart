@@ -234,22 +234,23 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   final Map<int, String> _localImageNotes = {};
 
-  List<String> _parseSections(String rawText) {
-    if (rawText.isEmpty) return [];
+  List<String> _parseSections(String rawText, {bool keepEmptyIfLocallyTracked = false}) {
+    if (rawText.isEmpty) return keepEmptyIfLocallyTracked ? [''] : [];
     return rawText.split('\n---\n');
   }
 
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
         ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
-    final sections = _parseSections(currentText);
-    sections.add(' ');
+    final isTracked = _localImageNotes.containsKey(imageIndex);
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
+    sections.add('');
     final newSecIndex = sections.length - 1;
     final secKey = '${imageIndex}_$newSecIndex';
     final updatedText = sections.join('\n---\n');
 
     _localImageNotes[imageIndex] = updatedText;
-    _sectionControllers[secKey] = TextEditingController(text: ' ');
+    _sectionControllers[secKey] = TextEditingController(text: '');
 
     setState(() {
       _activeFocusedSecKey = secKey;
@@ -262,14 +263,23 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
         ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
-    final sections = _parseSections(currentText);
+    final isTracked = _localImageNotes.containsKey(imageIndex);
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
+
     if (sectionIndex >= 0 && sectionIndex < sections.length) {
       sections.removeAt(sectionIndex);
       _sectionControllers.remove('${imageIndex}_$sectionIndex');
-      final updatedText = sections.join('\n---\n');
-      _localImageNotes[imageIndex] = updatedText;
-      setState(() {});
-      provider.updateImageNote(note.id, imageIndex, updatedText);
+
+      if (sections.isEmpty) {
+        _localImageNotes.remove(imageIndex);
+        setState(() {});
+        provider.updateImageNote(note.id, imageIndex, '');
+      } else {
+        final updatedText = sections.join('\n---\n');
+        _localImageNotes[imageIndex] = updatedText;
+        setState(() {});
+        provider.updateImageNote(note.id, imageIndex, updatedText);
+      }
     }
   }
 
@@ -814,7 +824,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
-  void _openFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int index = 0}) {
+  void _openFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int? index}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -822,7 +832,22 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
-            final noteFlashcards = context.watch<PhotoNoteProvider>().flashcards;
+            final allCards = context.watch<PhotoNoteProvider>().getFlashcardsForNote(note.id);
+            final targetGroup = (index != null) ? (_customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları') : null;
+            final noteFlashcards = (index == null)
+                ? allCards
+                : allCards.where((f) {
+                    final g = f.groupTitle.trim();
+                    return g == targetGroup!.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
+                  }).toList();
+
+            final headerTitle = (index == null)
+                ? "Sayfadaki Tüm Bilgi Kartları (${noteFlashcards.length})"
+                : "Görsel ${index + 1} Bilgi Kartları (${noteFlashcards.length})";
+
+            final groupHeaderTitle = (index == null)
+                ? 'Sayfadaki Tüm Görseller'
+                : (_customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları');
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.7,
@@ -869,7 +894,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                "Görsele Özel Bilgi Kartları (${noteFlashcards.length})",
+                                headerTitle,
                                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
                               ),
                               Text(
@@ -935,7 +960,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                           const Icon(Icons.folder_rounded, color: Color(0xFF14B8A6), size: 20),
                                           const SizedBox(width: 8),
                                           Text(
-                                            _customAccordionTitles[index] ?? 'Genel Bilgiler',
+                                            groupHeaderTitle,
                                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                                           ),
                                         ],
@@ -1880,7 +1905,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                   size: 24,
                                 ),
                                 tooltip: 'Bilgi Kartları',
-                                onPressed: () => _openFlashcardsBottomSheet(context, note, index: 0),
+                                onPressed: () => _openFlashcardsBottomSheet(context, note, index: null),
                               ),
                               IconButton(
                                 icon: Icon(
