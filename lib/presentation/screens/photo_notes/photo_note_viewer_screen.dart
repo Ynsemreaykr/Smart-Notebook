@@ -1496,7 +1496,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   child: ListView.builder(
                     controller: _verticalScrollController,
                     physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 96, 16, 40),
+                    padding: const EdgeInsets.fromLTRB(16, 120, 16, 40),
                     itemCount: totalImages,
                     itemBuilder: (context, index) {
                       final imgPath = note.imagePaths[index];
@@ -1529,15 +1529,17 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           GestureDetector(
                             onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
                             onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                            child: Container(
-                              width: double.infinity,
-                              color: Colors.black26,
-                              child: Stack(
-                                children: [
-                                  Image.file(
-                                    File(imgPath),
-                                    fit: BoxFit.fitWidth,
-                                    width: double.infinity,
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                              child: Container(
+                                width: double.infinity,
+                                color: Colors.black26,
+                                child: Stack(
+                                  children: [
+                                    Image.file(
+                                      File(imgPath),
+                                      fit: BoxFit.fitWidth,
+                                      width: double.infinity,
                                     errorBuilder: (context, error, stackTrace) {
                                       return Container(
                                         height: 200,
@@ -1635,6 +1637,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               ),
                             ),
                           ),
+                        ),
 
                           // Multi-Section Note Area
                           Builder(

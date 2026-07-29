@@ -505,7 +505,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     }
     final file = File(path);
     if (file.existsSync()) {
-      return Image.file(file, fit: BoxFit.cover);
+      return Image.file(file, fit: BoxFit.fitWidth, width: double.infinity);
     }
     return Container(
       color: AppTheme.darkCardHigh,
