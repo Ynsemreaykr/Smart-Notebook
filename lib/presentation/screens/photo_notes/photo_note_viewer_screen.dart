@@ -1332,24 +1332,28 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
         return Scaffold(
           backgroundColor: const Color(0xFF0F172A),
-          body: Stack(
-            children: [
-              // Main Vertical Scrollable Multi-Image List with Per-Image Notes
-              Scrollbar(
-                controller: _verticalScrollController,
-                thumbVisibility: true,
-                thickness: 6,
-                radius: const Radius.circular(8),
-                child: ListView.builder(
+          body: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            behavior: HitTestBehavior.translucent,
+            child: Stack(
+              children: [
+                // Main Vertical Scrollable Multi-Image List with Per-Image Notes
+                Scrollbar(
                   controller: _verticalScrollController,
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 96, 16, 40),
-                  itemCount: totalImages,
-                  itemBuilder: (context, index) {
-                    final imgPath = note.imagePaths[index];
-                    final imageNoteText = (index < note.imageNotes.length)
-                        ? note.imageNotes[index]
-                        : (index == 0 ? note.note : '');
+                  thumbVisibility: true,
+                  thickness: 6,
+                  radius: const Radius.circular(8),
+                  child: ListView.builder(
+                    controller: _verticalScrollController,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 96, 16, 40),
+                    itemCount: totalImages,
+                    itemBuilder: (context, index) {
+                      final imgPath = note.imagePaths[index];
+                      final imageNoteText = _localImageNotes[index] ??
+                          ((index < note.imageNotes.length)
+                              ? note.imageNotes[index]
+                              : (index == 0 ? note.note : ''));
 
                     if (!_imageNoteControllers.containsKey(index)) {
                       _imageNoteControllers[index] = TextEditingController(text: imageNoteText);
@@ -1768,36 +1772,55 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         if (_activeFocusedSecKey != null)
                           Container(
                             height: 38,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.only(left: 8, right: 4, top: 4, bottom: 4),
                             decoration: const BoxDecoration(
                               color: Color(0xFF1E293B),
                               border: Border(top: BorderSide(color: Colors.white10), bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
                             ),
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _quickSymbols.length,
-                              itemBuilder: (context, sIndex) {
-                                final sym = _quickSymbols[sIndex];
-                                return Padding(
-                                  padding: const EdgeInsets.only(right: 6),
-                                  child: InkWell(
-                                    onTap: () => _insertSymbolToActiveField(sym, note, provider),
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                                      ),
-                                      child: Text(
-                                        sym,
-                                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _quickSymbols.length,
+                                    itemBuilder: (context, sIndex) {
+                                      final sym = _quickSymbols[sIndex];
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 6),
+                                        child: InkWell(
+                                          onTap: () => _insertSymbolToActiveField(sym, note, provider),
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                            ),
+                                            child: Text(
+                                              sym,
+                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    FocusScope.of(context).unfocus();
+                                    setState(() {
+                                      _activeFocusedSecKey = null;
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                       ],
