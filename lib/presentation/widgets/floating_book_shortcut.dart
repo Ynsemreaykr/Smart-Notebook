@@ -166,6 +166,28 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     }
   }
 
+  void _insertSymbolToSection(int imageIndex, int sectionIndex, String symbol, PhotoNote note, PhotoNoteProvider provider) {
+    final key = imageIndex == -1 ? 'main_note' : '${imageIndex}_$sectionIndex';
+    final controller = _sectionControllers[key];
+    if (controller == null) return;
+
+    final text = controller.text;
+    final selection = controller.selection;
+    int start = selection.start;
+    int end = selection.end;
+
+    if (start < 0 || start > text.length) start = text.length;
+    if (end < 0 || end > text.length) end = text.length;
+
+    final newText = text.replaceRange(start, end, symbol);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + symbol.length),
+    );
+
+    _updateSectionText(imageIndex, sectionIndex, newText, note, provider);
+  }
+
   void _openFullScreenSectionEditor(BuildContext context, int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
     setState(() {
       _expandedSectionImageIndex = imageIndex;
@@ -1062,42 +1084,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                 ),
               ],
             ),
-            const SizedBox(height: 2),
-
-            // Quick Symbols Toolbar in Detail View
-            Container(
-              height: 28,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              margin: const EdgeInsets.only(bottom: 4),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _quickSymbols.length,
-                itemBuilder: (context, qIndex) {
-                  final sym = _quickSymbols[qIndex];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 3),
-                    child: InkWell(
-                      onTap: () {
-                        // Quick symbol inserted
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF14B8A6).withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(sym, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
+            const SizedBox(height: 4),
             Expanded(
               child: Scrollbar(
                 thumbVisibility: true,
@@ -1273,6 +1260,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                                         IconButton(
                                                           constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                                                           padding: EdgeInsets.zero,
+                                                          icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 12),
+                                                          tooltip: 'Yeni Not Bölümü Ekle',
+                                                          onPressed: () => _addNoteSection(index, note, provider),
+                                                        ),
+                                                        const SizedBox(width: 2),
+                                                        IconButton(
+                                                          constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                          padding: EdgeInsets.zero,
                                                           icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF14B8A6), size: 12),
                                                           tooltip: 'Tam Ekran Not Al',
                                                           onPressed: () => _openFullScreenSectionEditor(context, index, sIndex, note, provider),
@@ -1290,6 +1285,38 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                                   ],
                                                 ),
                                                 const SizedBox(height: 4),
+
+                                                // Quick Symbols Toolbar directly on top of Note Box
+                                                SizedBox(
+                                                  height: 24,
+                                                  child: ListView.builder(
+                                                    scrollDirection: Axis.horizontal,
+                                                    itemCount: _quickSymbols.length,
+                                                    itemBuilder: (context, qIndex) {
+                                                      final sym = _quickSymbols[qIndex];
+                                                      return Padding(
+                                                        padding: const EdgeInsets.only(right: 3),
+                                                        child: InkWell(
+                                                          onTap: () => _insertSymbolToSection(index, sIndex, sym, note, provider),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          child: Container(
+                                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                            decoration: BoxDecoration(
+                                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.18),
+                                                              borderRadius: BorderRadius.circular(4),
+                                                            ),
+                                                            child: Text(
+                                                              sym,
+                                                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+
                                                 TextField(
                                                   controller: secController,
                                                   maxLines: null,

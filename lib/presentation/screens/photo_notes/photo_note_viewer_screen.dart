@@ -1746,11 +1746,19 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                                           IconButton(
                                                             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                                             padding: EdgeInsets.zero,
+                                                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 18),
+                                                            tooltip: 'Yeni Not Bölümü Ekle',
+                                                            onPressed: () => _addNoteSection(index, note, provider),
+                                                          ),
+                                                          const SizedBox(width: 2),
+                                                          IconButton(
+                                                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                                            padding: EdgeInsets.zero,
                                                             icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF14B8A6), size: 18),
                                                             tooltip: 'Tam Ekran Not Al',
                                                             onPressed: () => _openFullScreenSectionEditor(context, index, sIndex, note, provider),
                                                           ),
-                                                          const SizedBox(width: 4),
+                                                          const SizedBox(width: 2),
                                                           IconButton(
                                                             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                                             padding: EdgeInsets.zero,
@@ -1843,18 +1851,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                           },
                                         ),
                                       ],
-
-                                      // Add New Note Section Button at bottom
-                                      Center(
-                                        child: TextButton.icon(
-                                          icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF14B8A6), size: 18),
-                                          label: const Text(
-                                            'Yeni Not Bölümü Ekle (+)',
-                                            style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 12),
-                                          ),
-                                          onPressed: () => _addNoteSection(index, note, provider),
-                                        ),
-                                      ),
                                     ],
                                   ),
                                 );
