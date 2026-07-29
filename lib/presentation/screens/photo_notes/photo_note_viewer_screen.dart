@@ -1496,9 +1496,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                       ),
-                                      const Spacer(),
-                                        style: const TextStyle(color: Colors.white70, fontSize: 10),
-                                      ),
+                                       const Spacer(),
+                                       const Divider(color: Colors.white12, height: 8),
+                                       Text(
+                                         fCard.backText,
+                                         maxLines: 2,
+                                         overflow: TextOverflow.ellipsis,
+                                         style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                       ),
                                     ],
                                   ),
                                 ),
@@ -1701,7 +1706,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                          backgroundColor: const Color(0xFF1E293B),
+                          color: const Color(0xFF1E293B),
                           onSelected: (val) {
                             if (val == 'add_image') {
                               _pickAndAddExtraImage(note);
