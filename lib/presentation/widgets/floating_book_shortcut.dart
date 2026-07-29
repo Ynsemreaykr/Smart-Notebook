@@ -762,7 +762,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        "v Bilgi Kartları (${noteFlashcards.length} Kart)",
+                                        "Bilgi Kartları (${noteFlashcards.length} Kart)",
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,

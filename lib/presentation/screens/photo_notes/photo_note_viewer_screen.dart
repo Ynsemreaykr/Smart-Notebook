@@ -1667,7 +1667,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 20),
                                       const SizedBox(width: 8),
                                       Text(
-                                        "v ${_customAccordionTitles[index] ?? 'Bilgi Kartları'} (${noteFlashcards.length} Kart)",
+                                        "${_customAccordionTitles[index] ?? 'Bilgi Kartları'} (${noteFlashcards.length} Kart)",
                                         style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
                                       ),
                                     ],
