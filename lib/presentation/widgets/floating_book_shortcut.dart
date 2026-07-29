@@ -37,6 +37,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   String? _selectedCategoryFolder; // e.g. "Coğrafya", "Tarih", "Tümü"
   String? _selectedSubUnit;        // e.g. "1. Ünite", "2. Ünite"
   PhotoNote? _selectedPhotoNote;   // Selected note detail view
+  int? _previewImageIndex;          // If non-null, shows full-window image preview inside mini window
   String _searchQuery = '';
 
   // Flashcards state
@@ -345,6 +346,143 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   _updateSectionText(imageIndex, sectionIndex, val, note, provider);
                 },
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFullWindowImagePreviewInMiniWindow(PhotoNote note, PhotoNoteProvider provider) {
+    final index = _previewImageIndex ?? 0;
+    final totalImages = note.imagePaths.length;
+    final imgPath = (index < totalImages) ? note.imagePaths[index] : note.imagePath;
+
+    final imageNoteText = _localImageNotes[index] ??
+        ((index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
+            ? note.imageNotes[index]
+            : '');
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFF0F172A),
+      child: Column(
+        children: [
+          // Top Header Bar inside Mini Window
+          Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E293B),
+              border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1)),
+            ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => setState(() => _previewImageIndex = null),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
+                      SizedBox(width: 2),
+                      Text('Geri', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${note.title} • Görsel ${index + 1}/$totalImages',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                  ),
+                ),
+                // Kalem / Edit Note Icon
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 18),
+                  tooltip: 'Notu Düzenle (=✏️)',
+                  onPressed: () {
+                    _addNoteSection(index, note, provider);
+                    _openFullScreenSectionEditor(context, index, 0, note, provider);
+                  },
+                ),
+                const SizedBox(width: 4),
+                // Kart / Flashcards Icon
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 16),
+                  tooltip: 'Bilgi Kartları',
+                  onPressed: () => _openFlashcardsBottomSheet(context, note, index: index),
+                ),
+              ],
+            ),
+          ),
+
+          // Main Zoomable Image
+          Expanded(
+            child: Stack(
+              children: [
+                Center(
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 3.5,
+                    child: _buildImageWidget(imgPath),
+                  ),
+                ),
+
+                // Note overlay at bottom of image preview inside mini window
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
+                                SizedBox(width: 4),
+                                Text('Görsel Notu', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11)),
+                              ],
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                _addNoteSection(index, note, provider);
+                                _openFullScreenSectionEditor(context, index, 0, note, provider);
+                              },
+                              child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                        if (imageNoteText.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            imageNoteText,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.3),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -983,6 +1121,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
       return _buildFlashcardsInMiniWindow(_selectedPhotoNote!, provider);
     }
 
+    if (_previewImageIndex != null && _selectedPhotoNote != null) {
+      return _buildFullWindowImagePreviewInMiniWindow(_selectedPhotoNote!, provider);
+    }
+
     // Level 3: Card Detail Preview with Vertical Scroll & Per-Image Notes
     if (_selectedPhotoNote != null) {
       final note = _selectedPhotoNote!;
@@ -1116,10 +1258,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Image (Tap opens Tam Ekran with note overlay)
+                          // Image (Tap opens Tam Ekran in mini window with note overlay)
                           GestureDetector(
-                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                            onTap: () => setState(() => _previewImageIndex = index),
+                            onDoubleTap: () => setState(() => _previewImageIndex = index),
                             child: ClipRRect(
                               child: Container(
                                 width: double.infinity,
@@ -1177,19 +1319,22 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                             ),
                                           ),
                                           const SizedBox(width: 4),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.6),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.zoom_in_rounded, size: 9, color: Colors.white),
-                                                SizedBox(width: 2),
-                                                Text('Tam Ekran', style: TextStyle(fontSize: 8, color: Colors.white70)),
-                                              ],
+                                          GestureDetector(
+                                            onTap: () => setState(() => _previewImageIndex = index),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(alpha: 0.6),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.zoom_in_rounded, size: 9, color: Colors.white),
+                                                  SizedBox(width: 2),
+                                                  Text('Tam Ekran', style: TextStyle(fontSize: 8, color: Colors.white70)),
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1570,7 +1715,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                         itemBuilder: (context, index) {
                           final card = folderNotes[index];
                           return GestureDetector(
-                            onTap: () => setState(() => _selectedPhotoNote = card),
+                            onTap: () => setState(() {
+                              _selectedPhotoNote = card;
+                              _previewImageIndex = 0;
+                            }),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: const Color(0xFF2563EB).withValues(alpha: 0.85),
