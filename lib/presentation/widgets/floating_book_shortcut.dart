@@ -363,19 +363,21 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
             ? note.imageNotes[index]
             : '');
 
+    final noteSections = _parseSections(imageNoteText);
+
     return Container(
       width: double.infinity,
       height: double.infinity,
-      color: const Color(0xFF0F172A),
+      color: Colors.black,
       child: Column(
         children: [
-          // Top Header Bar inside Mini Window
+          // Top Header Bar inside Mini Window matching user screenshot
           Container(
             height: 38,
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1E293B),
-              border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1)),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.7),
+              border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1)),
             ),
             child: Row(
               children: [
@@ -392,12 +394,21 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${note.title} • Görsel ${index + 1}/$totalImages',
+                    '${note.title} • Görsel ${index + 1} / $totalImages',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                   ),
                 ),
+                // Kart / Bilgi Kartları Sembolü (Right next to Görsel 1 / 1)
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 17),
+                  tooltip: 'Bilgi Kartları',
+                  onPressed: () => _openFlashcardsBottomSheet(context, note, index: index),
+                ),
+                const SizedBox(width: 2),
                 // Kalem / Edit Note Icon
                 IconButton(
                   constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
@@ -409,20 +420,11 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     _openFullScreenSectionEditor(context, index, 0, note, provider);
                   },
                 ),
-                const SizedBox(width: 4),
-                // Kart / Flashcards Icon
-                IconButton(
-                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 16),
-                  tooltip: 'Bilgi Kartları',
-                  onPressed: () => _openFlashcardsBottomSheet(context, note, index: index),
-                ),
               ],
             ),
           ),
 
-          // Main Zoomable Image
+          // Main Zoomable Image & Saydam (Semi-Transparent) Note Overlay
           Expanded(
             child: Stack(
               children: [
@@ -434,54 +436,60 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   ),
                 ),
 
-                // Note overlay at bottom of image preview inside mini window
-                Positioned(
-                  bottom: 8,
-                  left: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Row(
+                // Bottom Semi-Transparent Note Overlay Box (Saydam arka planlı not kutusu)
+                if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.50), // Saydam (Semi-transparent)
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                            if (sIndex > 0) const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
-                                SizedBox(width: 4),
-                                Text('Görsel Notu', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11)),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 14),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Not Bölümü ${sIndex + 1}',
+                                      style: const TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                                if (sIndex == 0)
+                                  GestureDetector(
+                                    onTap: () {
+                                      _addNoteSection(index, note, provider);
+                                      _openFullScreenSectionEditor(context, index, 0, note, provider);
+                                    },
+                                    child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  ),
                               ],
                             ),
-                            GestureDetector(
-                              onTap: () {
-                                _addNoteSection(index, note, provider);
-                                _openFullScreenSectionEditor(context, index, 0, note, provider);
-                              },
-                              child: const Text('Düzenle =✏️', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 3),
+                            Text(
+                              noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70, fontSize: 10, height: 1.3),
                             ),
                           ],
-                        ),
-                        if (imageNoteText.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            imageNoteText,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.3),
-                          ),
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
