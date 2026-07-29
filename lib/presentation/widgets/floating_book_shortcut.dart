@@ -381,10 +381,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
               children: [
                 GestureDetector(
                   onTap: () => setState(() => _previewImageIndex = null),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
-                      SizedBox(width: 2),
+                      const SizedBox(width: 2),
                       Text('Geri', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
                     ],
                   ),
