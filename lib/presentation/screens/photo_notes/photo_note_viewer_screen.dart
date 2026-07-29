@@ -1378,11 +1378,151 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
+  void _showFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int? cardIndex}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F172A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return Consumer<PhotoNoteProvider>(
+          builder: (context, provider, child) {
+            final allCards = provider.getFlashcardsForNote(note.id);
+            final targetGroup = (cardIndex != null) ? 'Görsel ${cardIndex + 1} Kartları' : null;
+            final noteFlashcards = (cardIndex == null)
+                ? allCards
+                : allCards.where((f) {
+                    final g = f.groupTitle.trim();
+                    return g == targetGroup || g == 'Görsel ${cardIndex + 1}' || g == 'Görsel ${cardIndex + 1} Kartları';
+                  }).toList();
+
+            final titleText = cardIndex != null
+                ? '${note.title} • Görsel ${cardIndex + 1} Bilgi Kartları'
+                : '${note.title} • Bilgi Kartları';
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.6,
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 20),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          titleText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF14B8A6), size: 22),
+                        tooltip: 'Yeni Bilgi Kartı Ekle',
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _showAddEditFlashcardDialogForNote(
+                            context,
+                            note,
+                            defaultGroupTitle: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
+                          );
+                        },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: noteFlashcards.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.style_rounded, size: 36, color: Colors.white24),
+                                const SizedBox(height: 8),
+                                Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                                const SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF14B8A6)),
+                                  icon: const Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                                  label: const Text('Bilgi Kartı Ekle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _showAddEditFlashcardDialogForNote(
+                                      context,
+                                      note,
+                                      defaultGroupTitle: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          )
+                        : GridView.builder(
+                            physics: const BouncingScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 1.1,
+                            ),
+                            itemCount: noteFlashcards.length,
+                            itemBuilder: (context, fIndex) {
+                              final fCard = noteFlashcards[fIndex];
+                              return GestureDetector(
+                                onTap: () => _showNoteFlashcardOptions(context, fCard, note),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        fCard.frontText,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                                      ),
+                                      const Spacer(),
+                                      const Divider(color: Colors.white12, height: 8),
+                                      Text(
+                                        fCard.backText,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showFullScreenImage(BuildContext context, String initialImgPath, int initialIndex, int totalImages, PhotoNote initialNote) {
     final provider = context.read<PhotoNoteProvider>();
-    final folderNotes = (_selectedCategoryFolder == null || _selectedCategoryFolder == 'Tümü')
+    final cat = initialNote.category;
+    final folderNotes = cat.isEmpty
         ? provider.photoNotes
-        : provider.photoNotes.where((n) => n.category.trim() == _selectedCategoryFolder!.trim() || n.category.startsWith('$_selectedCategoryFolder / ')).toList();
+        : provider.photoNotes.where((n) => n.category.trim() == cat.trim() || n.category.startsWith('$cat / ')).toList();
 
     int currentImgIndex = initialIndex;
     PhotoNote currentNote = initialNote;
