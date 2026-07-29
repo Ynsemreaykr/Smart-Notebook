@@ -50,6 +50,25 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final Map<int, String> _customAccordionTitles = {};
   String? _activeFocusedSecKey;
 
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _verticalScrollController.dispose();
+    for (final controller in _imageNoteControllers.values) {
+      controller.dispose();
+    }
+    for (final controller in _sectionControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   void _editAccordionTitle(int index) {
     final currentTitle = _customAccordionTitles[index] ?? 'Bilgi Kartları';
     final controller = TextEditingController(text: currentTitle);
@@ -1752,17 +1771,18 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
             behavior: HitTestBehavior.translucent,
             child: Stack(
               children: [
-                // Main Vertical Scrollable Multi-Image List with Per-Image Notes
-                Scrollbar(
-                  controller: _verticalScrollController,
-                  thumbVisibility: true,
-                  thickness: 6,
-                  radius: const Radius.circular(8),
-                  child: ListView.builder(
-                    controller: _verticalScrollController,
+                // Main Horizontal PageView for Multi-Image Card View with Per-Image Notes
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 120, 16, 40),
+                  child: PageView.builder(
+                    controller: _pageController,
                     physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 120, 16, 40),
                     itemCount: totalImages,
+                    onPageChanged: (pageIndex) {
+                      setState(() {
+                        _currentPage = pageIndex;
+                      });
+                    },
                     itemBuilder: (context, index) {
                       final imgPath = note.imagePaths[index];
                       final imageNoteText = _localImageNotes[index] ??
@@ -1775,25 +1795,64 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       _imageNoteControllers[index]!.text = imageNoteText;
                     }
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 24),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: cardColor.withOpacity(0.3), width: 1.2),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Image Container (Huge full-width display, tap opens Tam Ekran)
-                          GestureDetector(
-                            onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                            onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    return SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 24),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: cardColor.withValues(alpha: 0.3), width: 1.2),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header Bar for Horizontal Page Navigation if totalImages > 1
+                            if (totalImages > 1)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    IconButton(
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      padding: EdgeInsets.zero,
+                                      icon: Icon(Icons.chevron_left_rounded, color: index > 0 ? Colors.white : Colors.white24, size: 24),
+                                      onPressed: index > 0
+                                          ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                                          : null,
+                                    ),
+                                    Text(
+                                      'Görsel ${index + 1} / $totalImages',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    IconButton(
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                      padding: EdgeInsets.zero,
+                                      icon: Icon(Icons.chevron_right_rounded, color: index < totalImages - 1 ? Colors.white : Colors.white24, size: 24),
+                                      onPressed: index < totalImages - 1
+                                          ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                                          : null,
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                            // Image Container (Huge full-width display, tap opens Tam Ekran)
+                            GestureDetector(
+                              onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                              onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(totalImages > 1 ? 0 : 16),
+                                ),
                               child: Container(
                                 width: double.infinity,
                                 color: Colors.black26,
@@ -2076,7 +2135,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
                           // v Bilgi Kartları Bottom Sheet Trigger Button
                           GestureDetector(
-                            onTap: () => _openFlashcardsBottomSheet(context, note, index: index),
+                            onTap: () => _showFlashcardsBottomSheet(context, note, cardIndex: index),
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
