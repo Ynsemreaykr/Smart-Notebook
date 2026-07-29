@@ -1497,16 +1497,25 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                       ),
                                       const Spacer(),
-                                      const Divider(color: Colors.white12, height: 8),
-                                      Text(
-                                        fCard.backText,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(color: Colors.white70, fontSize: 10),
                                       ),
                                     ],
                                   ),
-                                 void _showFullScreenImage(BuildContext context, String initialImgPath, int initialIndex, int totalImages, PhotoNote initialNote) {
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showFullScreenImage(BuildContext context, String initialImgPath, int initialIndex, int totalImages, PhotoNote initialNote) {
     // Already in full-screen viewer
   }
 
