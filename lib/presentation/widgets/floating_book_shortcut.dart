@@ -41,10 +41,367 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   String? _selectedFlashcardFolder; // Group/Unit folder for flashcards
   final Set<String> _flippedCardIds = {};
 
+  // Image & Section Notes state inside Mini Window
+  final Map<int, String> _localImageNotes = {};
+  final Map<String, TextEditingController> _sectionControllers = {};
+  final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️', '📌', '❓', '⚡', '💡', '✏️', '➕', '➖'];
+
+  List<String> _parseSections(String rawText, {bool keepEmptyIfLocallyTracked = false}) {
+    if (rawText.isEmpty) return keepEmptyIfLocallyTracked ? [''] : [];
+    return rawText.split('\n---\n');
+  }
+
+  void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final isTracked = _localImageNotes.containsKey(imageIndex);
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
+    sections.add('');
+    final newSecIndex = sections.length - 1;
+    final secKey = '${imageIndex}_$newSecIndex';
+    final updatedText = sections.join('\n---\n');
+
+    _localImageNotes[imageIndex] = updatedText;
+    _sectionControllers[secKey] = TextEditingController(text: '');
+
+    setState(() {});
+    provider.updateImageNote(note.id, imageIndex, updatedText);
+  }
+
+  void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final isTracked = _localImageNotes.containsKey(imageIndex);
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
+
+    if (sectionIndex >= 0 && sectionIndex < sections.length) {
+      sections.removeAt(sectionIndex);
+      _sectionControllers.remove('${imageIndex}_$sectionIndex');
+
+      if (sections.isEmpty) {
+        _localImageNotes.remove(imageIndex);
+        setState(() {});
+        provider.updateImageNote(note.id, imageIndex, '');
+      } else {
+        final updatedText = sections.join('\n---\n');
+        _localImageNotes[imageIndex] = updatedText;
+        setState(() {});
+        provider.updateImageNote(note.id, imageIndex, updatedText);
+      }
+    }
+  }
+
+  void _updateSectionText(int imageIndex, int sectionIndex, String newSectionText, PhotoNote note, PhotoNoteProvider provider) {
+    final currentText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+    final isTracked = _localImageNotes.containsKey(imageIndex);
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
+
+    if (sectionIndex >= 0 && sectionIndex < sections.length) {
+      sections[sectionIndex] = newSectionText;
+      final updatedText = sections.join('\n---\n');
+      _localImageNotes[imageIndex] = updatedText;
+      provider.updateImageNote(note.id, imageIndex, updatedText);
+    }
+  }
+
+  void _openFullScreenSectionEditor(BuildContext context, int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
+    final secKey = '${imageIndex}_$sectionIndex';
+    final secController = _sectionControllers[secKey] ?? TextEditingController();
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Tam Ekran Not',
+      pageBuilder: (ctx, anim1, anim2) {
+        return Scaffold(
+          backgroundColor: const Color(0xFF0F172A),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1E293B),
+            elevation: 2,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+              onPressed: () {
+                _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
+                Navigator.pop(ctx);
+              },
+            ),
+            title: Text(
+              'Not Bölümü ${sectionIndex + 1} (Tam Ekran)',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            actions: [
+              TextButton.icon(
+                icon: const Icon(Icons.check_rounded, color: Color(0xFF14B8A6), size: 20),
+                label: const Text('Tamam', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 14)),
+                onPressed: () {
+                  _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              // Özel Karakterler Barı (Special Characters Toolbar)
+              Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF1E293B),
+                  border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
+                ),
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _quickSymbols.length,
+                  itemBuilder: (context, qIndex) {
+                    final sym = _quickSymbols[qIndex];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: InkWell(
+                        onTap: () {
+                          final text = secController.text;
+                          final selection = secController.selection;
+                          int start = selection.start;
+                          int end = selection.end;
+                          if (start < 0 || start > text.length) start = text.length;
+                          if (end < 0 || end > text.length) end = text.length;
+
+                          final newText = text.replaceRange(start, end, sym);
+                          secController.value = TextEditingValue(
+                            text: newText,
+                            selection: TextSelection.collapsed(offset: start + sym.length),
+                          );
+                          _updateSectionText(imageIndex, sectionIndex, newText, note, provider);
+                        },
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                          ),
+                          child: Text(
+                            sym,
+                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // Full Screen Main TextField
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    controller: secController,
+                    maxLines: null,
+                    expands: true,
+                    autofocus: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
+                    decoration: InputDecoration(
+                      hintText: 'Not bölümü ${sectionIndex + 1} için notunuzu rahatça buraya yazın...',
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                      filled: true,
+                      fillColor: Colors.black26,
+                      contentPadding: const EdgeInsets.all(16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      _updateSectionText(imageIndex, sectionIndex, val, note, provider);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int? index}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final allCards = context.watch<PhotoNoteProvider>().getFlashcardsForNote(note.id);
+            final targetGroup = (index != null) ? 'Görsel ${index + 1} Kartları' : null;
+            final noteFlashcards = (index == null)
+                ? allCards
+                : allCards.where((f) {
+                    final g = f.groupTitle.trim();
+                    return g == targetGroup!.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
+                  }).toList();
+
+            final headerTitle = (index == null)
+                ? "Sayfadaki Tüm Bilgi Kartları (${noteFlashcards.length})"
+                : "Görsel ${index + 1} Bilgi Kartları (${noteFlashcards.length})";
+
+            final groupHeaderTitle = (index == null)
+                ? 'Sayfadaki Tüm Görseller'
+                : 'Görsel ${index + 1} Kartları';
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E293B),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(color: Colors.black54, blurRadius: 16, spreadRadius: 4),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Handle Bar
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  // Header Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                headerTitle,
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+                              ),
+                              Text(
+                                note.title,
+                                style: const TextStyle(color: Colors.white60, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Content Body
+                  Expanded(
+                    child: noteFlashcards.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.style_outlined, color: Colors.white38, size: 48),
+                                const SizedBox(height: 12),
+                                const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                              ],
+                            ),
+                          )
+                        : SingleChildScrollView(
+                            physics: const BouncingScrollPhysics(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.folder_rounded, color: Color(0xFF14B8A6), size: 20),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            groupHeaderTitle,
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '${noteFlashcards.length} Kart',
+                                        style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+
+                                // 2-Column Cards Grid
+                                GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 2,
+                                    crossAxisSpacing: 10,
+                                    mainAxisSpacing: 10,
+                                    childAspectRatio: 1.2,
+                                  ),
+                                  itemCount: noteFlashcards.length,
+                                  itemBuilder: (context, fcIndex) {
+                                    final card = noteFlashcards[fcIndex];
+                                    return FlipCardWidget(
+                                      flashcard: card,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // Image Zoom State
   String? _zoomedImagePath;
   bool _showMiniNoteSection = true;
-  final Set<int> _expandedVKartIndices = {};
   final TransformationController _zoomTransformationController = TransformationController();
   TapDownDetails? _zoomDoubleTapDetails;
 
@@ -598,6 +955,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                   ),
                 ),
                 const Spacer(),
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 18),
+                  tooltip: 'Bilgi Kartları',
+                  onPressed: () => _openFlashcardsBottomSheet(context, note, index: null),
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     note.title,
@@ -626,9 +991,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       final g = f.groupTitle.trim();
                       return g == targetGroup || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
                     }).toList();
-                    final imageNoteText = (index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
-                        ? note.imageNotes[index]
-                        : (index == 0 ? note.note : '');
+                    final imageNoteText = _localImageNotes[index] ??
+                        ((index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
+                            ? note.imageNotes[index]
+                            : (index == 0 ? note.note : ''));
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -656,6 +1022,28 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                       child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
+                                          GestureDetector(
+                                            onTap: () => _addNoteSection(index, note, provider),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF14B8A6).withValues(alpha: 0.85),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.add_rounded, size: 9, color: Colors.white),
+                                                  SizedBox(width: 2),
+                                                  Text(
+                                                    '+ Not',
+                                                    style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
                                           GestureDetector(
                                             onTap: () => _showReplaceImagePicker(context, note, index),
                                             child: Container(
@@ -702,29 +1090,108 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                               ),
                             ),
                           ),
-                          // Per-Image Note Sections
+
+                          // Per-Image Multi-Section Note Area
                           Builder(
                             builder: (context) {
-                              if (imageNoteText.trim().isEmpty) return const SizedBox.shrink();
-                              final sections = imageNoteText.split('\n---\n');
-                              if (sections.isEmpty) return const SizedBox.shrink();
+                              final isTracked = _localImageNotes.containsKey(index);
+                              final noteSections = _parseSections(imageNoteText, keepEmptyIfLocallyTracked: isTracked);
+                              if (noteSections.isEmpty) return const SizedBox.shrink();
 
                               return Container(
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
-                                  color: Colors.black26,
+                                  color: Color(0xFF0F172A),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    for (int sIndex = 0; sIndex < sections.length; sIndex++) ...[
-                                      Text(
-                                        'Not Bölümü ${sIndex + 1}: ${sections[sIndex]}',
-                                        style: TextStyle(fontSize: 9, color: AppTheme.textSecondary, height: 1.3),
+                                    for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                                      Builder(
+                                        builder: (context) {
+                                          final secKey = '${index}_$sIndex';
+                                          final secText = noteSections[sIndex];
+
+                                          if (!_sectionControllers.containsKey(secKey)) {
+                                            _sectionControllers[secKey] = TextEditingController(text: secText);
+                                          } else if (_sectionControllers[secKey]!.text != secText) {
+                                            _sectionControllers[secKey]!.text = secText;
+                                          }
+
+                                          final secController = _sectionControllers[secKey]!;
+
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 6),
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(alpha: 0.04),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                  children: [
+                                                    Row(
+                                                      children: [
+                                                        const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 12),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          'Not Bölümü ${sIndex + 1}',
+                                                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 10),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    Row(
+                                                      children: [
+                                                        IconButton(
+                                                          constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                          padding: EdgeInsets.zero,
+                                                          icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF14B8A6), size: 12),
+                                                          tooltip: 'Tam Ekran Not Al',
+                                                          onPressed: () => _openFullScreenSectionEditor(context, index, sIndex, note, provider),
+                                                        ),
+                                                        const SizedBox(width: 2),
+                                                        IconButton(
+                                                          constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                          padding: EdgeInsets.zero,
+                                                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 12),
+                                                          tooltip: 'Bu Not Bölümünü Sil',
+                                                          onPressed: () => _removeNoteSection(index, sIndex, note, provider),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                TextField(
+                                                  controller: secController,
+                                                  maxLines: null,
+                                                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                                                  decoration: InputDecoration(
+                                                    hintText: 'Not bölümü ${sIndex + 1}...',
+                                                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 9),
+                                                    isDense: true,
+                                                    contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                                    filled: true,
+                                                    fillColor: Colors.black26,
+                                                    border: OutlineInputBorder(
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      borderSide: BorderSide.none,
+                                                    ),
+                                                  ),
+                                                  onChanged: (val) {
+                                                    _updateSectionText(index, sIndex, val, note, provider);
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        },
                                       ),
-                                      if (sIndex < sections.length - 1)
-                                        const SizedBox(height: 3),
                                     ],
                                   ],
                                 ),
@@ -732,84 +1199,45 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                             },
                           ),
 
-                          // Collapsible Bilgi Kartları (v sembollü akordiyon buton)
+                          // Bilgi Kartları Trigger Button (Opens Modal Bottom Sheet)
                           GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedVKartIndices.contains(index)) {
-                                  _expandedVKartIndices.remove(index);
-                                } else {
-                                  _expandedVKartIndices.add(index);
-                                }
-                              });
-                            },
+                            onTap: () => _openFlashcardsBottomSheet(context, note, index: index),
                             child: Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
-                                color: AppTheme.neonPurple.withValues(alpha: 0.15),
-                                border: Border(top: BorderSide(color: AppTheme.neonPurple.withValues(alpha: 0.3))),
-                                borderRadius: BorderRadius.vertical(
-                                  bottom: _expandedVKartIndices.contains(index) ? Radius.zero : const Radius.circular(10),
-                                ),
+                                color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                                border: Border(top: BorderSide(color: const Color(0xFF14B8A6).withValues(alpha: 0.3))),
+                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Row(
                                     children: [
-                                      Icon(
-                                        _expandedVKartIndices.contains(index)
-                                            ? Icons.keyboard_arrow_up_rounded
-                                            : Icons.keyboard_arrow_down_rounded,
-                                        size: 16,
-                                        color: AppTheme.neonPurple,
-                                      ),
+                                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 14),
                                       const SizedBox(width: 4),
                                       Text(
                                         "Bilgi Kartları (${noteFlashcards.length} Kart)",
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
-                                          color: AppTheme.neonPurple,
+                                          color: Color(0xFF14B8A6),
                                         ),
                                       ),
                                     ],
                                   ),
-                                  Icon(Icons.style_rounded, size: 12, color: AppTheme.neonPurple),
+                                  const Row(
+                                    children: [
+                                      Text('Aç', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w600)),
+                                      SizedBox(width: 2),
+                                      Icon(Icons.keyboard_arrow_right_rounded, size: 14, color: Colors.white70),
+                                    ],
+                                  ),
                                 ],
                               ),
                             ),
                           ),
-                          if (_expandedVKartIndices.contains(index))
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.black45,
-                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-                                border: Border.all(color: AppTheme.neonPurple.withValues(alpha: 0.4)),
-                              ),
-                              child: noteFlashcards.isEmpty
-                                  ? Text('Henüz bilgi kartı eklenmemiş.', style: TextStyle(fontSize: 10, color: AppTheme.textMuted))
-                                  : GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 2,
-                                        crossAxisSpacing: 6,
-                                        mainAxisSpacing: 6,
-                                        childAspectRatio: 1.2,
-                                      ),
-                                      itemCount: noteFlashcards.length,
-                                      itemBuilder: (context, fcIndex) {
-                                        final card = noteFlashcards[fcIndex];
-                                        return FlipCardWidget(
-                                          flashcard: card,
-                                        );
-                                      },
-                                    ),
-                            ),
                         ],
                       ),
                     );
