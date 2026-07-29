@@ -1427,7 +1427,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           _showAddEditFlashcardDialogForNote(
                             context,
                             note,
-                            defaultGroupTitle: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
+                            defaultGroup: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
                           );
                         },
                       ),
@@ -1457,7 +1457,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     _showAddEditFlashcardDialogForNote(
                                       context,
                                       note,
-                                      defaultGroupTitle: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
+                                      defaultGroup: cardIndex != null ? 'Görsel ${cardIndex + 1} Kartları' : null,
                                     );
                                   },
                                 ),
