@@ -2157,10 +2157,11 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           ),
                         ],
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  );
+                },
               ),
+            ),
 
               // Top AppBar + Physically Attached Dynamic Symbol Bar
               Positioned(
