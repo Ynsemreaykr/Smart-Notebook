@@ -54,18 +54,66 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
         ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
-    final isTracked = _localImageNotes.containsKey(imageIndex);
-    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
-    sections.add('');
+    final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: false);
+
+    if (sections.isEmpty) {
+      sections.add('');
+    } else if (sections.last.trim().isNotEmpty) {
+      sections.add('');
+    }
+
     final newSecIndex = sections.length - 1;
     final secKey = '${imageIndex}_$newSecIndex';
     final updatedText = sections.join('\n---\n');
 
     _localImageNotes[imageIndex] = updatedText;
-    _sectionControllers[secKey] = TextEditingController(text: '');
+    if (!_sectionControllers.containsKey(secKey)) {
+      _sectionControllers[secKey] = TextEditingController(text: sections[newSecIndex]);
+    }
 
     setState(() {});
     provider.updateImageNote(note.id, imageIndex, updatedText);
+  }
+
+  void _confirmAndRemoveNoteSection(BuildContext context, int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Not Bölümünü Sil',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ],
+        ),
+        content: Text(
+          'Not Bölümü ${sectionIndex + 1}\'i silmek istediğinize emin misiniz?',
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _removeNoteSection(imageIndex, sectionIndex, note, provider);
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
@@ -1160,7 +1208,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                                           padding: EdgeInsets.zero,
                                                           icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 12),
                                                           tooltip: 'Bu Not Bölümünü Sil',
-                                                          onPressed: () => _removeNoteSection(index, sIndex, note, provider),
+                                                          onPressed: () => _confirmAndRemoveNoteSection(context, index, sIndex, note, provider),
                                                         ),
                                                       ],
                                                     ),
