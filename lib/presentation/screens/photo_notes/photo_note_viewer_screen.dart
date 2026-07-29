@@ -1830,7 +1830,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
               ),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }
