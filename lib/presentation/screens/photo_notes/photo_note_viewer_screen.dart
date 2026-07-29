@@ -1715,21 +1715,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                   ],
                                 ],
                               ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  @override
+         @override
   Widget build(BuildContext context) {
     return Consumer<PhotoNoteProvider>(
       builder: (context, provider, child) {
@@ -1737,502 +1723,291 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         final noteIndex = notes.indexWhere((n) => n.id == widget.noteId);
 
         if (noteIndex == -1) {
-          return const Scaffold(
+          return Scaffold(
             backgroundColor: Colors.black,
-            body: Center(child: AppText('Not bulunamadı.', styleType: AppTextStyleType.bodyLarge)),
+            appBar: AppBar(
+              backgroundColor: Colors.black,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: const Center(child: AppText('Not bulunamadı.', styleType: AppTextStyleType.bodyLarge)),
           );
         }
 
         final note = notes[noteIndex];
-        final cardColor = _parseColor(note.color);
+        final folderNotes = note.category.isEmpty
+            ? provider.photoNotes
+            : provider.photoNotes.where((n) => n.category.trim() == note.category.trim() || n.category.startsWith('${note.category} / ')).toList();
+
         final totalImages = note.imagePaths.length;
-        final noteFlashcards = provider.getFlashcardsForNote(note.id);
+        final currentImgIndex = (_currentPage < totalImages) ? _currentPage : 0;
+
+        final imageNoteText = (currentImgIndex < note.imageNotes.length && note.imageNotes[currentImgIndex].isNotEmpty)
+            ? note.imageNotes[currentImgIndex]
+            : (currentImgIndex == 0 ? note.note : '');
+        final overlaySections = _parseSections(imageNoteText);
+
+        void nextImageOrCard() {
+          if (currentImgIndex < totalImages - 1) {
+            _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+            return;
+          }
+          final cardIdx = folderNotes.indexWhere((n) => n.id == note.id);
+          if (cardIdx != -1 && cardIdx < folderNotes.length - 1) {
+            final nextNote = folderNotes[cardIdx + 1];
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => PhotoNoteViewerScreen(noteId: nextNote.id)),
+            );
+          }
+        }
+
+        void prevImageOrCard() {
+          if (currentImgIndex > 0) {
+            _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+            return;
+          }
+          final cardIdx = folderNotes.indexWhere((n) => n.id == note.id);
+          if (cardIdx > 0) {
+            final prevNote = folderNotes[cardIdx - 1];
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => PhotoNoteViewerScreen(noteId: prevNote.id)),
+            );
+          }
+        }
 
         return Scaffold(
-          backgroundColor: const Color(0xFF0F172A),
-          body: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            behavior: HitTestBehavior.translucent,
-            child: Stack(
-              children: [
-                // Main Horizontal PageView for Multi-Image Card View with Per-Image Notes
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 120, 16, 40),
-                  child: PageView.builder(
-                    controller: _pageController,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: totalImages,
-                    onPageChanged: (pageIndex) {
-                      setState(() {
-                        _currentPage = pageIndex;
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      final imgPath = note.imagePaths[index];
-                      final imageNoteText = _localImageNotes[index] ??
-                          ((index < note.imageNotes.length) ? note.imageNotes[index] : '');
-
-                    if (!_imageNoteControllers.containsKey(index)) {
-                      _imageNoteControllers[index] = TextEditingController(text: imageNoteText);
-                    } else if (!_focusedNoteIndexes.contains(index) &&
-                        _imageNoteControllers[index]!.text != imageNoteText) {
-                      _imageNoteControllers[index]!.text = imageNoteText;
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              // Full Screen Zoomable & Pannable Image PageView with Swipe Gestures
+              GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity != null) {
+                    if (details.primaryVelocity! < -150) {
+                      nextImageOrCard();
+                    } else if (details.primaryVelocity! > 150) {
+                      prevImageOrCard();
                     }
-
-                    return SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 24),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: cardColor.withValues(alpha: 0.3), width: 1.2),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header Bar for Horizontal Page Navigation if totalImages > 1
-                            if (totalImages > 1)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    IconButton(
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      padding: EdgeInsets.zero,
-                                      icon: Icon(Icons.chevron_left_rounded, color: index > 0 ? Colors.white : Colors.white24, size: 24),
-                                      onPressed: index > 0
-                                          ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                                          : null,
-                                    ),
-                                    Text(
-                                      'Görsel ${index + 1} / $totalImages',
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                                    ),
-                                    IconButton(
-                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                      padding: EdgeInsets.zero,
-                                      icon: Icon(Icons.chevron_right_rounded, color: index < totalImages - 1 ? Colors.white : Colors.white24, size: 24),
-                                      onPressed: index < totalImages - 1
-                                          ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                                          : null,
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                            // Image Container (Huge full-width display, tap opens Tam Ekran)
-                            GestureDetector(
-                              onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                              onDoubleTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(totalImages > 1 ? 0 : 16),
-                                ),
-                              child: Container(
-                                width: double.infinity,
-                                color: Colors.black26,
-                                child: Stack(
-                                  children: [
-                                    Image.file(
-                                      File(imgPath),
-                                      fit: BoxFit.fitWidth,
-                                      width: double.infinity,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        height: 200,
-                                        color: Colors.black38,
-                                        child: const Center(
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
-                                              SizedBox(height: 8),
-                                              Text('Görsel yüklenemedi', style: TextStyle(color: Colors.white70)),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        GestureDetector(
-                                          onTap: () => _addNoteSection(index, note, provider),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF14B8A6),
-                                              borderRadius: BorderRadius.circular(6),
-                                              boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 4)],
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.add_rounded, size: 13, color: Colors.white),
-                                                SizedBox(width: 3),
-                                                Text(
-                                                  '+ Not',
-                                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        GestureDetector(
-                                          onTap: () => _showReplaceImagePicker(context, note, index),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.7),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6)),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.published_with_changes_rounded, size: 13, color: Color(0xFF14B8A6)),
-                                                SizedBox(width: 4),
-                                                Text(
-                                                  'Görseli Değiştir',
-                                                  style: TextStyle(color: Color(0xFF14B8A6), fontSize: 10, fontWeight: FontWeight.bold),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        GestureDetector(
-                                          onTap: () => _showFullScreenImage(context, imgPath, index, totalImages, note),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(alpha: 0.6),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: const Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(Icons.zoom_in_rounded, size: 13, color: Colors.white70),
-                                                SizedBox(width: 4),
-                                                Text(
-                                                  'Tam Ekran',
-                                                  style: TextStyle(color: Colors.white70, fontSize: 10),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-
-                          // Multi-Section Note Area
-                          Builder(
-                            builder: (context) {
-                              final noteSections = _parseSections(imageNoteText);
-                              if (noteSections.isEmpty) return const SizedBox.shrink();
-
-                              return Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(12),
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF0F172A),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Display each section (Bölüm 1, Bölüm 2, etc.)
-                                    for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
-                                        Builder(
-                                          builder: (context) {
-                                            final secKey = '${index}_$sIndex';
-                                            final secText = noteSections[sIndex];
-
-                                            if (!_sectionControllers.containsKey(secKey)) {
-                                              _sectionControllers[secKey] = TextEditingController(text: secText);
-                                            } else if (!_focusedNoteIndexes.contains(secKey.hashCode) &&
-                                                _sectionControllers[secKey]!.text != secText) {
-                                              _sectionControllers[secKey]!.text = secText;
-                                            }
-
-                                            final secController = _sectionControllers[secKey]!;
-
-                                            return Container(
-                                              margin: const EdgeInsets.only(bottom: 12),
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white.withValues(alpha: 0.04),
-                                                borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
-                                              ),
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  // Section Header
-                                                  Row(
-                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                                    children: [
-                                                      Row(
-                                                        children: [
-                                                          const Icon(Icons.edit_note_rounded, color: Color(0xFF14B8A6), size: 18),
-                                                          const SizedBox(width: 6),
-                                                          Text(
-                                                            'Not Bölümü ${sIndex + 1}',
-                                                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 12),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                      Row(
-                                                        children: [
-                                                          IconButton(
-                                                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                            padding: EdgeInsets.zero,
-                                                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 18),
-                                                            tooltip: 'Yeni Not Bölümü Ekle',
-                                                            onPressed: () => _addNoteSection(index, note, provider),
-                                                          ),
-                                                          const SizedBox(width: 2),
-                                                          IconButton(
-                                                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                            padding: EdgeInsets.zero,
-                                                            icon: const Icon(Icons.open_in_full_rounded, color: Color(0xFF14B8A6), size: 18),
-                                                            tooltip: 'Tam Ekran Not Al',
-                                                            onPressed: () => _openFullScreenSectionEditor(context, index, sIndex, note, provider),
-                                                          ),
-                                                          const SizedBox(width: 2),
-                                                          IconButton(
-                                                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                                            padding: EdgeInsets.zero,
-                                                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                                                            tooltip: 'Bu Not Bölümünü Sil',
-                                                            onPressed: () => _confirmAndRemoveNoteSection(context, index, sIndex, note, provider),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 6),
-
-                                                  // Quick Symbols Toolbar
-                                                  SizedBox(
-                                                    height: 32,
-                                                    child: ListView.builder(
-                                                      scrollDirection: Axis.horizontal,
-                                                      itemCount: _quickSymbols.length,
-                                                      itemBuilder: (context, qIndex) {
-                                                        final sym = _quickSymbols[qIndex];
-                                                        return Padding(
-                                                          padding: const EdgeInsets.only(right: 6, bottom: 2),
-                                                          child: InkWell(
-                                                            onTap: () => _insertSymbolToSection(index, sIndex, sym, note, provider),
-                                                            borderRadius: BorderRadius.circular(6),
-                                                            child: Container(
-                                                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                                                              decoration: BoxDecoration(
-                                                                color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
-                                                                borderRadius: BorderRadius.circular(6),
-                                                                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3)),
-                                                              ),
-                                                              child: Text(
-                                                                sym,
-                                                                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        );
-                                                      },
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 6),
-
-                                                  // Section TextField
-                                                  Focus(
-                                                    onFocusChange: (hasFocus) {
-                                                      setState(() {
-                                                        if (hasFocus) {
-                                                          _activeFocusedSecKey = secKey;
-                                                          _focusedNoteIndexes.add(secKey.hashCode);
-                                                        } else {
-                                                          if (_activeFocusedSecKey == secKey) {
-                                                            _activeFocusedSecKey = null;
-                                                          }
-                                                          _focusedNoteIndexes.remove(secKey.hashCode);
-                                                          _updateSectionText(index, sIndex, secController.text, note, provider);
-                                                        }
-                                                      });
-                                                    },
-                                                    child: TextField(
-                                                      controller: secController,
-                                                      maxLines: null,
-                                                      minLines: 2,
-                                                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-                                                      decoration: InputDecoration(
-                                                        hintText: 'Not bölümü ${sIndex + 1} için notunuzu yazın...',
-                                                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 12),
-                                                        filled: true,
-                                                        fillColor: Colors.black26,
-                                                        contentPadding: const EdgeInsets.all(10),
-                                                        border: OutlineInputBorder(
-                                                          borderRadius: BorderRadius.circular(8),
-                                                          borderSide: const BorderSide(color: Colors.white12),
-                                                        ),
-                                                        focusedBorder: OutlineInputBorder(
-                                                          borderRadius: BorderRadius.circular(8),
-                                                          borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
-                                                        ),
-                                                      ),
-                                                      onChanged: (val) {
-                                                        _updateSectionText(index, sIndex, val, note, provider);
-                                                      },
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-
-                          // v Bilgi Kartları Bottom Sheet Trigger Button
-                          GestureDetector(
-                            onTap: () => _showFlashcardsBottomSheet(context, note, cardIndex: index),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF1E293B),
-                                borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
-                                border: Border(top: BorderSide(color: Colors.white10)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 20),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        "${_customAccordionTitles[index] ?? 'Bilgi Kartları'} (${noteFlashcards.length} Kart)",
-                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
-                                      ),
-                                    ],
-                                  ),
-                                  const Row(
-                                    children: [
-                                      Text(
-                                        'Aç',
-                                        style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w600),
-                                      ),
-                                      SizedBox(width: 4),
-                                      Icon(Icons.arrow_forward_ios_rounded, color: Colors.white54, size: 12),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
+                  }
                 },
+                child: PageView.builder(
+                  controller: _pageController,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: totalImages,
+                  onPageChanged: (page) {
+                    setState(() {
+                      _currentPage = page;
+                    });
+                  },
+                  itemBuilder: (context, idx) {
+                    final pPath = note.imagePaths[idx];
+                    return Center(
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Image.file(
+                          File(pPath),
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
 
-              // Top AppBar + Physically Attached Dynamic Symbol Bar
+              // Left Navigation Button
+              if (currentImgIndex > 0 || (folderNotes.indexWhere((n) => n.id == note.id) > 0))
+                Positioned(
+                  left: 6,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 36),
+                      onPressed: prevImageOrCard,
+                    ),
+                  ),
+                ),
+
+              // Right Navigation Button
+              if (currentImgIndex < totalImages - 1 || (folderNotes.indexWhere((n) => n.id == note.id) < folderNotes.length - 1))
+                Positioned(
+                  right: 6,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(
+                    child: IconButton(
+                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 36),
+                      onPressed: nextImageOrCard,
+                    ),
+                  ),
+                ),
+
+              // Top Header Bar
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
                 child: SafeArea(
-                  top: true,
-                  bottom: false,
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A).withValues(alpha: 0.98),
-                      border: const Border(bottom: BorderSide(color: Colors.white12)),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black54, blurRadius: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    color: Colors.black.withValues(alpha: 0.6),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '${note.title} • Görsel ${currentImgIndex + 1} / $totalImages',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        // Bilgi Kartları Icon
+                        IconButton(
+                          icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
+                          tooltip: 'Bilgi Kartları',
+                          onPressed: () {
+                            _showFlashcardsBottomSheet(context, note, cardIndex: currentImgIndex);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        // Kalem / Edit Note Icon
+                        IconButton(
+                          icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
+                          tooltip: 'Notu Düzenle',
+                          onPressed: () {
+                            _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider);
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                          backgroundColor: const Color(0xFF1E293B),
+                          onSelected: (val) {
+                            if (val == 'add_image') {
+                              _pickAndAddExtraImage(note);
+                            } else if (val == 'replace_image') {
+                              _showReplaceImagePicker(context, note, currentImgIndex);
+                            } else if (val == 'share') {
+                              _shareImage(note);
+                            } else if (val == 'delete') {
+                              _deleteNote(context, note);
+                            }
+                          },
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(
+                              value: 'add_image',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 18),
+                                  SizedBox(width: 8),
+                                  Text('+ Görsel Ekle', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'replace_image',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.published_with_changes_rounded, color: Color(0xFF38BDF8), size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Görseli Değiştir', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.share_rounded, color: Colors.white70, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Paylaş', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          child: Row(
+                  ),
+                ),
+              ),
+
+              // Bottom Semi-Transparent Scrollable Note Overlay Panel (Without "Not Bölümü" headers or "Düzenle" button)
+              if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    top: false,
+                    child: Container(
+                      constraints: const BoxConstraints(maxHeight: 140),
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
+                        ],
+                      ),
+                      child: Scrollbar(
+                        thumbVisibility: true,
+                        thickness: 3,
+                        radius: const Radius.circular(3),
+                        child: SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              IconButton(
-                                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                onPressed: () => Navigator.pop(context),
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  note.title,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                if (sIndex > 0) const SizedBox(height: 6),
+                                Text(
+                                  overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
+                                  style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 26),
-                                tooltip: 'Yeni Görsel Ekle',
-                                onPressed: () => _pickAndAddExtraImage(note),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.style_rounded,
-                                  color: noteFlashcards.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                                  size: 24,
-                                ),
-                                tooltip: 'Bilgi Kartları',
-                                onPressed: () => _openFlashcardsBottomSheet(context, note, index: null),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  note.note.isNotEmpty ? Icons.edit_note_rounded : Icons.note_add_rounded,
-                                  color: note.note.isNotEmpty ? const Color(0xFF14B8A6) : Colors.white,
-                                  size: 24,
-                                ),
-                                tooltip: 'Genel Metin Notu',
-                                onPressed: () => _openNoteTextScreen(context, note),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.share_rounded, color: Colors.white, size: 22),
-                                tooltip: 'Paylaş',
-                                onPressed: () => _shareImage(note),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                                tooltip: 'Sil',
-                                onPressed: () => _deleteNote(context, note),
-                              ),
+                              ],
                             ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }                         ],
                           ),
                         ),
                       ],
