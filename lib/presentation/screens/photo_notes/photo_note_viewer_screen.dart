@@ -50,25 +50,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final Map<int, String> _customAccordionTitles = {};
   String? _activeFocusedSecKey;
 
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController(initialPage: 0);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    _verticalScrollController.dispose();
-    for (final controller in _imageNoteControllers.values) {
-      controller.dispose();
-    }
-    for (final controller in _sectionControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
   void _editAccordionTitle(int index) {
     final currentTitle = _customAccordionTitles[index] ?? 'Bilgi Kartları';
     final controller = TextEditingController(text: currentTitle);
@@ -422,6 +403,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     _transformationController.dispose();
     _verticalScrollController.dispose();
     for (final c in _imageNoteControllers.values) {
+      c.dispose();
+    }
+    for (final c in _sectionControllers.values) {
       c.dispose();
     }
     super.dispose();
