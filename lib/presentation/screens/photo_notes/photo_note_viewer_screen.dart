@@ -1765,62 +1765,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             ],
                           ),
                         ),
-
-                        // Dynamic Symbol Bar physically attached below Top Row
-                        if (_activeFocusedSecKey != null)
-                          Container(
-                            height: 38,
-                            padding: const EdgeInsets.only(left: 8, right: 4, top: 4, bottom: 4),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF1E293B),
-                              border: Border(top: BorderSide(color: Colors.white10), bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: _quickSymbols.length,
-                                    itemBuilder: (context, sIndex) {
-                                      final sym = _quickSymbols[sIndex];
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 6),
-                                        child: InkWell(
-                                          onTap: () => _insertSymbolToActiveField(sym, note, provider),
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                                            ),
-                                            child: Text(
-                                              sym,
-                                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                InkWell(
-                                  onTap: () {
-                                    FocusScope.of(context).unfocus();
-                                    setState(() {
-                                      _activeFocusedSecKey = null;
-                                    });
-                                  },
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                       ],
                     ),
                   ),
