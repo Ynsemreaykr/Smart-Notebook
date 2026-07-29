@@ -34,12 +34,15 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
   // Visual Cards Navigation State inside Mini Window
   String? _selectedCategoryFolder; // e.g. "Coğrafya", "Tarih", "Tümü"
+  String? _selectedSubUnit;        // e.g. "1. Ünite", "2. Ünite"
   PhotoNote? _selectedPhotoNote;   // Selected note detail view
   String _searchQuery = '';
 
   // Flashcards state
   String? _selectedFlashcardFolder; // Group/Unit folder for flashcards
   final Set<String> _flippedCardIds = {};
+  bool _showFlashcardsInMiniWindow = false;
+  int? _flashcardIndexFilter;
 
   // Image & Section Notes state inside Mini Window
   final Map<int, String> _localImageNotes = {};
@@ -57,7 +60,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: false);
 
     if (sections.isEmpty) {
@@ -122,7 +125,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
   void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final isTracked = _localImageNotes.containsKey(imageIndex);
     final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
 
@@ -144,8 +147,13 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   }
 
   void _updateSectionText(int imageIndex, int sectionIndex, String newSectionText, PhotoNote note, PhotoNoteProvider provider) {
+    if (imageIndex == -1) {
+      provider.updateMainNote(note.id, newSectionText);
+      return;
+    }
+
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final isTracked = _localImageNotes.containsKey(imageIndex);
     final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
 
@@ -167,8 +175,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   Widget _buildExpandedSectionEditorInMiniWindow(PhotoNote note, PhotoNoteProvider provider) {
     final imageIndex = _expandedSectionImageIndex!;
     final sectionIndex = _expandedSectionIndex!;
-    final secKey = '${imageIndex}_$sectionIndex';
-    final secController = _sectionControllers[secKey] ?? TextEditingController();
+    final secKey = imageIndex == -1 ? 'main_note' : '${imageIndex}_$sectionIndex';
+    if (!_sectionControllers.containsKey(secKey)) {
+      _sectionControllers[secKey] = TextEditingController(
+        text: imageIndex == -1 ? note.note : '',
+      );
+    }
+    final secController = _sectionControllers[secKey]!;
+    final titleText = imageIndex == -1 ? 'Genel Not' : 'Not Bölümü ${sectionIndex + 1}';
 
     return Container(
       width: double.infinity,
@@ -205,7 +219,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Not Bölümü ${sectionIndex + 1}',
+                    titleText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
@@ -316,170 +330,93 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   }
 
   void _openFlashcardsBottomSheet(BuildContext context, PhotoNote note, {int? index}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final allCards = context.watch<PhotoNoteProvider>().getFlashcardsForNote(note.id);
-            final targetGroup = (index != null) ? 'Görsel ${index + 1} Kartları' : null;
-            final noteFlashcards = (index == null)
-                ? allCards
-                : allCards.where((f) {
-                    final g = f.groupTitle.trim();
-                    return g == targetGroup!.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
-                  }).toList();
+    setState(() {
+      _showFlashcardsInMiniWindow = true;
+      _flashcardIndexFilter = index;
+    });
+  }
 
-            final headerTitle = (index == null)
-                ? "Sayfadaki Tüm Bilgi Kartları (${noteFlashcards.length})"
-                : "Görsel ${index + 1} Bilgi Kartları (${noteFlashcards.length})";
+  Widget _buildFlashcardsInMiniWindow(PhotoNote note, PhotoNoteProvider provider) {
+    final index = _flashcardIndexFilter;
+    final allCards = provider.getFlashcardsForNote(note.id);
+    final targetGroup = (index != null) ? 'Görsel ${index + 1} Kartları' : null;
+    final noteFlashcards = (index == null)
+        ? allCards
+        : allCards.where((f) {
+            final g = f.groupTitle.trim();
+            return g == targetGroup!.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
+          }).toList();
 
-            final groupHeaderTitle = (index == null)
-                ? 'Sayfadaki Tüm Görseller'
-                : 'Görsel ${index + 1} Kartları';
+    final titleText = (index == null)
+        ? "Sayfadaki Tüm Bilgi Kartları (${noteFlashcards.length})"
+        : "Görsel ${index + 1} Bilgi Kartları (${noteFlashcards.length})";
 
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              decoration: const BoxDecoration(
-                color: Color(0xFF1E293B),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [
-                  BoxShadow(color: Colors.black54, blurRadius: 16, spreadRadius: 4),
-                ],
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: const Color(0xFF0F172A),
+      padding: const EdgeInsets.all(8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _showFlashcardsInMiniWindow = false),
+                child: Row(
+                  children: [
+                    Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
+                    const SizedBox(width: 2),
+                    Text('Geri', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                  ],
+                ),
               ),
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Handle Bar
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      margin: const EdgeInsets.only(bottom: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(2),
+              const SizedBox(width: 8),
+              const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 16),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  titleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Expanded(
+            child: noteFlashcards.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.style_rounded, size: 32, color: Colors.white24),
+                        const SizedBox(height: 6),
+                        Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: AppTheme.textMuted, fontSize: 10)),
+                      ],
+                    ),
+                  )
+                : Scrollbar(
+                    thumbVisibility: true,
+                    thickness: 4,
+                    radius: const Radius.circular(4),
+                    child: GridView.builder(
+                      physics: const BouncingScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 6,
+                        mainAxisSpacing: 6,
+                        childAspectRatio: 1.15,
                       ),
+                      itemCount: noteFlashcards.length,
+                      itemBuilder: (context, fcIndex) {
+                        final card = noteFlashcards[fcIndex];
+                        return FlipCardWidget(flashcard: card);
+                      },
                     ),
                   ),
-
-                  // Header Row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 24),
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                headerTitle,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
-                              ),
-                              Text(
-                                note.title,
-                                style: const TextStyle(color: Colors.white60, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Content Body
-                  Expanded(
-                    child: noteFlashcards.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.style_outlined, color: Colors.white38, size: 48),
-                                const SizedBox(height: 12),
-                                const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 13)),
-                              ],
-                            ),
-                          )
-                        : SingleChildScrollView(
-                            physics: const BouncingScrollPhysics(),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.folder_rounded, color: Color(0xFF14B8A6), size: 20),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            groupHeaderTitle,
-                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                                          ),
-                                        ],
-                                      ),
-                                      Text(
-                                        '${noteFlashcards.length} Kart',
-                                        style: const TextStyle(color: Colors.white60, fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                // 2-Column Cards Grid
-                                GridView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    crossAxisSpacing: 10,
-                                    mainAxisSpacing: 10,
-                                    childAspectRatio: 1.2,
-                                  ),
-                                  itemCount: noteFlashcards.length,
-                                  itemBuilder: (context, fcIndex) {
-                                    final card = noteFlashcards[fcIndex];
-                                    return FlipCardWidget(
-                                      flashcard: card,
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
+          ),
   }
 
   // Image Zoom State
@@ -1012,9 +949,13 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     );
   }
 
-  /// Visual Cards Menu (Level 1: Folders, Level 2: 2-Column Cards Grid, Level 3: Card Details)
+  /// Visual Cards Menu (Level 1: Folders, Level 1.5: Subunits, Level 2: 2-Column Cards Grid, Level 3: Card Details)
   Widget _buildVisualCardsMenu() {
     final provider = context.watch<PhotoNoteProvider>();
+
+    if (_showFlashcardsInMiniWindow && _selectedPhotoNote != null) {
+      return _buildFlashcardsInMiniWindow(_selectedPhotoNote!, provider);
+    }
 
     // Level 3: Card Detail Preview with Vertical Scroll & Per-Image Notes
     if (_selectedPhotoNote != null) {
@@ -1026,9 +967,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
       }
 
       return Padding(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(6.0),
         child: Column(
           children: [
+            // Top Action Bar matching PhotoNoteViewerScreen
             Row(
               children: [
                 GestureDetector(
@@ -1037,31 +979,121 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     children: [
                       Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
                       const SizedBox(width: 2),
-                      Text('Geri', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                      Text('Geri', style: TextStyle(fontSize: 10, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
                 const Spacer(),
+                // + Resim
                 IconButton(
-                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
                   padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 18),
+                  icon: const Icon(Icons.add_a_photo_rounded, color: Color(0xFF38BDF8), size: 15),
+                  tooltip: '+ Resim Ekle',
+                  onPressed: () async {
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(source: ImageSource.gallery);
+                    if (picked != null) {
+                      await provider.addExtraImagesToNote(note.id, [File(picked.path)]);
+                    }
+                  },
+                ),
+                // + Kartlar (Bilgi Kartları)
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 15),
                   tooltip: 'Bilgi Kartları',
                   onPressed: () => _openFlashcardsBottomSheet(context, note, index: null),
                 ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    note.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                  ),
+                // + Not (Genel Not)
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.note_add_rounded, color: Colors.amber, size: 15),
+                  tooltip: '+ Genel Not',
+                  onPressed: () {
+                    _openFullScreenSectionEditor(context, -1, 0, note, provider);
+                  },
+                ),
+                // Paylaş
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.share_rounded, color: Colors.white70, size: 14),
+                  tooltip: 'Paylaş',
+                  onPressed: () {
+                    Share.share('Görsel Kart: ${note.title}\n${note.note}');
+                  },
+                ),
+                // Sil
+                IconButton(
+                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 14),
+                  tooltip: 'Kartı Sil',
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        backgroundColor: const Color(0xFF1E293B),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Kartı Sil', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                        content: Text('"${note.title}" görsel kartını silmek istediğinize emin misiniz?', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal', style: TextStyle(color: Colors.white60))),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              setState(() => _selectedPhotoNote = null);
+                              provider.deletePhotoNote(note.id);
+                            },
+                            child: const Text('Sil', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 2),
+
+            // Quick Symbols Toolbar in Detail View
+            Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 4),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _quickSymbols.length,
+                itemBuilder: (context, qIndex) {
+                  final sym = _quickSymbols[qIndex];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 3),
+                    child: InkWell(
+                      onTap: () {
+                        // Quick symbol inserted
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF14B8A6).withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(sym, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
             Expanded(
               child: Scrollbar(
                 thumbVisibility: true,
@@ -1081,7 +1113,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     final imageNoteText = _localImageNotes[index] ??
                         ((index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
                             ? note.imageNotes[index]
-                            : (index == 0 ? note.note : ''));
+                            : '');
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -1340,9 +1372,102 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     // Level 2: Inside a specific Folder (e.g. Coğrafya)
     if (_selectedCategoryFolder != null) {
       final folderName = _selectedCategoryFolder!;
+      final subCategories = provider.getSubCategories(folderName);
+
+      // Level 1.5: Sub-Categories / Üniteler List
+      if (subCategories.isNotEmpty && _selectedSubUnit == null) {
+        return Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _selectedCategoryFolder = null),
+                    child: Row(
+                      children: [
+                        Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
+                        const SizedBox(width: 2),
+                        Text('Dersler', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(_getCategoryIcon(folderName), size: 14, color: _getCategoryColor(folderName)),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      folderName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                  ),
+                  Text(
+                    '${subCategories.length} Ünite',
+                    style: TextStyle(fontSize: 9, color: AppTheme.textMuted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: GridView.builder(
+                  padding: const EdgeInsets.all(4),
+                  physics: const BouncingScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 6,
+                    mainAxisSpacing: 6,
+                    childAspectRatio: 1.2,
+                  ),
+                  itemCount: subCategories.length,
+                  itemBuilder: (context, index) {
+                    final subName = subCategories[index];
+                    final fullPath = '$folderName / $subName';
+                    final noteCount = provider.getNoteCountForCategory(fullPath, includeSubCategories: true);
+
+                    return GestureDetector(
+                      onTap: () => setState(() => _selectedSubUnit = subName),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0EA5E9).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF0EA5E9).withValues(alpha: 0.35)),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.folder_open_rounded, size: 18, color: Color(0xFF0EA5E9)),
+                            const SizedBox(height: 4),
+                            Text(
+                              subName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            Text(
+                              '$noteCount Görsel Kart',
+                              style: TextStyle(fontSize: 9, color: AppTheme.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      final categoryFilter = _selectedSubUnit != null ? '$folderName / $_selectedSubUnit' : folderName;
       final folderNotes = folderName == 'Tümü'
           ? provider.photoNotes
-          : provider.photoNotes.where((n) => n.category.trim() == folderName.trim() || n.category.startsWith('$folderName / ')).toList();
+          : provider.photoNotes.where((n) => n.category.trim() == categoryFilter.trim() || n.category.startsWith('$categoryFilter / ')).toList();
 
       return Padding(
         padding: const EdgeInsets.all(8.0),
@@ -1352,12 +1477,21 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
             Row(
               children: [
                 GestureDetector(
-                  onTap: () => setState(() => _selectedCategoryFolder = null),
+                  onTap: () => setState(() {
+                    if (_selectedSubUnit != null) {
+                      _selectedSubUnit = null;
+                    } else {
+                      _selectedCategoryFolder = null;
+                    }
+                  }),
                   child: Row(
                     children: [
                       Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
                       const SizedBox(width: 2),
-                      Text('Bölümler', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                      Text(
+                        _selectedSubUnit != null ? 'Üniteler' : 'Bölümler',
+                        style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold),
+                      ),
                     ],
                   ),
                 ),
@@ -1366,7 +1500,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    folderName,
+                    _selectedSubUnit != null ? '$folderName / $_selectedSubUnit' : folderName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),

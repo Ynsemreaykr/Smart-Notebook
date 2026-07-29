@@ -325,7 +325,22 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     final updatedNote = existingNote.copyWith(
       imageNotes: notes,
-      note: imageIndex == 0 ? noteText.trim() : existingNote.note,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Update main card note (kartın genel ana notu)
+  Future<void> updateMainNote(String noteId, String noteText) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final updatedNote = existingNote.copyWith(
+      note: noteText.trim(),
       updatedAt: DateTime.now(),
     );
 

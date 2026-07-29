@@ -241,7 +241,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   void _addNoteSection(int imageIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: false);
 
     if (sections.isEmpty) {
@@ -310,7 +310,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   void _removeNoteSection(int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final isTracked = _localImageNotes.containsKey(imageIndex);
     final sections = _parseSections(currentText, keepEmptyIfLocallyTracked: isTracked);
 
@@ -355,7 +355,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   void _updateSectionText(int imageIndex, int sectionIndex, String newSectionText, PhotoNote note, PhotoNoteProvider provider) {
     final currentText = _localImageNotes[imageIndex] ??
-        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : (imageIndex == 0 ? note.note : ''));
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
     final sections = _parseSections(currentText);
     while (sections.length <= sectionIndex) {
       sections.add('');
@@ -1549,9 +1549,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                     itemBuilder: (context, index) {
                       final imgPath = note.imagePaths[index];
                       final imageNoteText = _localImageNotes[index] ??
-                          ((index < note.imageNotes.length)
-                              ? note.imageNotes[index]
-                              : (index == 0 ? note.note : ''));
+                          ((index < note.imageNotes.length) ? note.imageNotes[index] : '');
 
                     if (!_imageNoteControllers.containsKey(index)) {
                       _imageNoteControllers[index] = TextEditingController(text: imageNoteText);
