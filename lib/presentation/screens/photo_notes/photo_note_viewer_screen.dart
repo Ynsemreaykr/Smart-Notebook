@@ -96,7 +96,23 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
   void _openFullScreenSectionEditor(BuildContext context, int imageIndex, int sectionIndex, PhotoNote note, PhotoNoteProvider provider) {
     final secKey = '${imageIndex}_$sectionIndex';
-    final secController = _sectionControllers[secKey] ?? TextEditingController();
+
+    // Load existing section text for this image/section
+    final currentRawText = _localImageNotes[imageIndex] ??
+        ((imageIndex < note.imageNotes.length) ? note.imageNotes[imageIndex] : '');
+    final sections = _parseSections(currentRawText);
+    final existingText = (sectionIndex < sections.length) ? sections[sectionIndex] : '';
+
+    // Reuse or create controller with existing text
+    final secController = _sectionControllers.putIfAbsent(
+      secKey,
+      () => TextEditingController(text: existingText),
+    );
+    // If controller already existed but text differs (e.g. external update), sync it
+    if (secController.text != existingText && _sectionControllers.containsKey(secKey) == false) {
+      secController.text = existingText;
+      secController.selection = TextSelection.collapsed(offset: existingText.length);
+    }
 
     showGeneralDialog(
       context: context,

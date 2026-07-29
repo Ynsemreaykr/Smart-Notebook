@@ -9,6 +9,7 @@ import '../../application/providers/photo_note_provider.dart';
 import '../../domain/models/photo_note.dart';
 import '../theme/app_theme.dart';
 import '../screens/photo_notes/photo_notes_screen.dart';
+import '../screens/photo_notes/photo_note_viewer_screen.dart';
 
 /// A floating, draggable mini replica of the Visual Cards (Görsel Kartlar) menu.
 /// Directly displays subject folders (Coğrafya, Tarih, Biyoloji, etc.)
@@ -1787,10 +1788,14 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                         itemBuilder: (context, index) {
                           final card = folderNotes[index];
                           return GestureDetector(
-                            onTap: () => setState(() {
-                              _selectedPhotoNote = card;
-                              _previewImageIndex = 0;
-                            }),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PhotoNoteViewerScreen(noteId: card.id),
+                                ),
+                              );
+                            },
                             child: Container(
                               decoration: BoxDecoration(
                                 color: const Color(0xFF2563EB).withValues(alpha: 0.85),
