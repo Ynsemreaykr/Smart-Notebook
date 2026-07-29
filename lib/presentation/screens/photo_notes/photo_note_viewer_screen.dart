@@ -43,7 +43,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final ScrollController _verticalScrollController = ScrollController();
   final Map<int, TextEditingController> _imageNoteControllers = {};
   final Set<int> _focusedNoteIndexes = {};
-  final Set<int> _expandedVKartIndexes = {};
   Timer? _autoScrollTimer;
   final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️', '📌', '❓', '⚡', '💡', '✏️', '➕', '➖'];
 
@@ -1326,7 +1325,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
 
         final note = notes[noteIndex];
         final cardColor = _parseColor(note.color);
-        final formattedDate = DateFormat('dd MMM yyyy, HH:mm', 'tr_TR').format(note.updatedAt);
         final totalImages = note.imagePaths.length;
         final noteFlashcards = provider.getFlashcardsForNote(note.id);
 
