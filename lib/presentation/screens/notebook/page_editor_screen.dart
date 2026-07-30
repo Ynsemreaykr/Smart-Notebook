@@ -613,7 +613,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             fit: StackFit.expand,
             children: [
               RepaintBoundary(
-                key: _cropBoundaryKey,
+                key: index == _activePageIndex ? _cropBoundaryKey : null,
                 child: Container(
                   width: double.infinity,
                   height: double.infinity,

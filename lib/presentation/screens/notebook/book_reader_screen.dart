@@ -276,6 +276,7 @@ class _BookReaderScreenState extends State<BookReaderScreen> {
               // Full-screen PageView with per-page zoom
               PageView.builder(
                 controller: _pageController,
+                allowImplicitScrolling: true,
                 physics: _isZoomed ? const NeverScrollableScrollPhysics() : const BouncingScrollPhysics(),
                 itemCount: _flatPages.length,
                 onPageChanged: (index) {
