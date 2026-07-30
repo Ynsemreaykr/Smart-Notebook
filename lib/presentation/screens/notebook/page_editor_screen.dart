@@ -468,8 +468,9 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             PageView.builder(
               controller: _pageController,
               scrollDirection: Axis.horizontal,
+              allowImplicitScrolling: true,
               itemCount: _pages.length,
-              physics: (_currentMode == EditorMode.drawing || _isZoomed) 
+              physics: (_currentMode == EditorMode.drawing || _currentMode == EditorMode.questionCrop || _isZoomed) 
                   ? const NeverScrollableScrollPhysics() 
                   : const BouncingScrollPhysics(),
               onPageChanged: (index) {
@@ -608,26 +609,29 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               });
             }
           },
-          child: RepaintBoundary(
-            key: _cropBoundaryKey,
-            child: Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: Colors.black,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // 1. Arka Plan: PDF/Görsel tam ekran (BoxFit.contain)
-                if (hasBg)
-                  Positioned.fill(
-                    child: Center(
-                      child: Image.memory(
-                        base64Decode(pageData.backgroundImageBase64!),
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RepaintBoundary(
+                key: _cropBoundaryKey,
+                child: Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  color: Colors.black,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      // 1. Arka Plan: PDF/Görsel tam ekran (BoxFit.contain)
+                      if (hasBg)
+                        Positioned.fill(
+                          child: Center(
+                            child: Image.memory(
+                              base64Decode(pageData.backgroundImageBase64!),
+                              fit: BoxFit.contain,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                        ),
 
               // 2. Text Editor — arka plan yoksa göster
               if (!hasBg)
@@ -725,90 +729,90 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                   }
                 ),
               ),
-              // 5. Question crop rectangle overlay & pointer listener
-              if (_currentMode == EditorMode.questionCrop)
-                Positioned.fill(
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (event) {
-                      final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
-                      if (box != null) {
-                        final localPos = box.globalToLocal(event.position);
-                        setState(() {
-                          _cropStartPoint = localPos;
-                          _cropEndPoint = localPos;
-                        });
-                      }
-                    },
-                    onPointerMove: (event) {
-                      if (_cropStartPoint != null) {
-                        final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
-                        if (box != null) {
-                          final localPos = box.globalToLocal(event.position);
-                          setState(() {
-                            _cropEndPoint = localPos;
-                          });
-                        }
-                      }
-                    },
-                    onPointerUp: (event) async {
-                      if (_cropStartPoint != null && _cropEndPoint != null) {
-                        final start = _cropStartPoint!;
-                        final end = _cropEndPoint!;
-                        setState(() {
-                          _cropStartPoint = null;
-                          _cropEndPoint = null;
-                        });
-                        await _cropAndOpenSaveQuestionModal(start, end);
-                      }
-                    },
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      child: Builder(
-                        builder: (context) {
-                          if (_cropStartPoint == null || _cropEndPoint == null) {
-                            return const SizedBox();
-                          }
-                          final left = math.min(_cropStartPoint!.dx, _cropEndPoint!.dx);
-                          final top = math.min(_cropStartPoint!.dy, _cropEndPoint!.dy);
-                          final width = (_cropStartPoint!.dx - _cropEndPoint!.dx).abs();
-                          final height = (_cropStartPoint!.dy - _cropEndPoint!.dy).abs();
-
-                          return Stack(
-                            children: [
-                              Positioned(
-                                left: left,
-                                top: top,
-                                width: width,
-                                height: height,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
-                                    border: Border.all(color: const Color(0xFFF59E0B), width: 2.5),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Center(
-                                    child: Icon(Icons.content_cut_rounded, color: Color(0xFFF59E0B), size: 28),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
       ),
-    ),
-    ),
-  );
+      // 5. Question crop rectangle overlay & gesture detector (OUTSIDE RepaintBoundary so capture is clean!)
+      if (_currentMode == EditorMode.questionCrop)
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (details) {
+              final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
+              if (box != null) {
+                final localPos = box.globalToLocal(details.globalPosition);
+                setState(() {
+                  _cropStartPoint = localPos;
+                  _cropEndPoint = localPos;
+                });
+              }
+            },
+            onPanUpdate: (details) {
+              if (_cropStartPoint != null) {
+                final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
+                if (box != null) {
+                  final localPos = box.globalToLocal(details.globalPosition);
+                  setState(() {
+                    _cropEndPoint = localPos;
+                  });
+                }
+              }
+            },
+            onPanEnd: (details) async {
+              if (_cropStartPoint != null && _cropEndPoint != null) {
+                final start = _cropStartPoint!;
+                final end = _cropEndPoint!;
+                setState(() {
+                  _cropStartPoint = null;
+                  _cropEndPoint = null;
+                });
+                await _cropAndOpenSaveQuestionModal(start, end);
+              }
+            },
+            child: Container(
+              color: Colors.transparent,
+              child: Builder(
+                builder: (context) {
+                  if (_cropStartPoint == null || _cropEndPoint == null) {
+                    return const SizedBox();
+                  }
+                  final left = math.min(_cropStartPoint!.dx, _cropEndPoint!.dx);
+                  final top = math.min(_cropStartPoint!.dy, _cropEndPoint!.dy);
+                  final width = (_cropStartPoint!.dx - _cropEndPoint!.dx).abs();
+                  final height = (_cropStartPoint!.dy - _cropEndPoint!.dy).abs();
+
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: left,
+                        top: top,
+                        width: width,
+                        height: height,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                            border: Border.all(color: const Color(0xFFF59E0B), width: 2.5),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.content_cut_rounded, color: Color(0xFFF59E0B), size: 28),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+    ],
+  ),
+),
+),
+);
 }
-
-
 
   Future<void> _cropAndOpenSaveQuestionModal(Offset start, Offset end) async {
     try {
@@ -1255,103 +1259,106 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildMainToolbar({bool hasBg = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A).withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(30),
         border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
         boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, spreadRadius: 1)],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-
-          _ToolbarAction(
-            icon: Icons.pan_tool_rounded, 
-            label: 'Hareket', 
-            active: _currentMode == EditorMode.pan,
-            onTap: () {
-              setState(() {
-                _selectedTextBoxId = null;
-                _selectedImageId = null;
-                _currentMode = EditorMode.pan;
-              });
-            },
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.brush, 
-            label: 'Kalem', 
-            onTap: () {
-               setState(() {
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _ToolbarAction(
+              icon: Icons.pan_tool_rounded, 
+              label: 'Hareket', 
+              active: _currentMode == EditorMode.pan,
+              onTap: () {
+                setState(() {
                   _selectedTextBoxId = null;
                   _selectedImageId = null;
-                  _currentMode = EditorMode.drawing;
-                  _activeTool = 'SmoothLine';
-                  _applyDrawingToolToActivePage();
-               });
-            },
-            active: _currentMode == EditorMode.drawing && _activeTool == 'SmoothLine',
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.border_color_rounded, 
-            label: 'Fosforlu', 
-            onTap: () {
-               setState(() {
+                  _currentMode = EditorMode.pan;
+                });
+              },
+            ),
+            const VerticalDivider(),
+            _ToolbarAction(
+              icon: Icons.brush, 
+              label: 'Kalem', 
+              onTap: () {
+                 setState(() {
+                    _selectedTextBoxId = null;
+                    _selectedImageId = null;
+                    _currentMode = EditorMode.drawing;
+                    _activeTool = 'SmoothLine';
+                    _applyDrawingToolToActivePage();
+                 });
+              },
+              active: _currentMode == EditorMode.drawing && _activeTool == 'SmoothLine',
+            ),
+            const VerticalDivider(),
+            _ToolbarAction(
+              icon: Icons.border_color_rounded, 
+              label: 'Fosforlu', 
+              onTap: () {
+                 setState(() {
+                    _selectedTextBoxId = null;
+                    _selectedImageId = null;
+                    _currentMode = EditorMode.drawing;
+                    _activeTool = 'Highlighter';
+                    _applyDrawingToolToActivePage();
+                 });
+              },
+              active: _currentMode == EditorMode.drawing && _activeTool == 'Highlighter',
+            ),
+            const VerticalDivider(),
+            _ToolbarAction(
+              icon: Icons.auto_fix_normal, 
+              label: 'Silgi', 
+              onTap: () {
+                 setState(() {
+                    _selectedTextBoxId = null;
+                    _selectedImageId = null;
+                    _currentMode = EditorMode.drawing;
+                    _activeTool = 'Eraser';
+                    _applyDrawingToolToActivePage();
+                 });
+              },
+              active: _currentMode == EditorMode.drawing && (_activeTool == 'Eraser' || _activeTool == 'AreaEraser'),
+            ),
+            const VerticalDivider(),
+            _ToolbarAction(
+              icon: Icons.add_photo_alternate, 
+              label: '+Resim', 
+              onTap: _pickImage,
+            ),
+            const VerticalDivider(),
+            _ToolbarAction(
+              icon: Icons.content_cut_rounded,
+              label: 'Soru Kırp',
+              active: _currentMode == EditorMode.questionCrop,
+              onTap: () {
+                setState(() {
                   _selectedTextBoxId = null;
                   _selectedImageId = null;
-                  _currentMode = EditorMode.drawing;
-                  _activeTool = 'Highlighter';
-                  _applyDrawingToolToActivePage();
-               });
-            },
-            active: _currentMode == EditorMode.drawing && _activeTool == 'Highlighter',
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.auto_fix_normal, 
-            label: 'Silgi', 
-            onTap: () {
-               setState(() {
-                  _selectedTextBoxId = null;
-                  _selectedImageId = null;
-                  _currentMode = EditorMode.drawing;
-                  _activeTool = 'Eraser';
-                  _applyDrawingToolToActivePage();
-               });
-            },
-            active: _currentMode == EditorMode.drawing && (_activeTool == 'Eraser' || _activeTool == 'AreaEraser'),
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.add_photo_alternate, 
-            label: '+Resim', 
-            onTap: _pickImage,
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.content_cut_rounded,
-            label: 'Soru Kırp',
-            active: _currentMode == EditorMode.questionCrop,
-            onTap: () {
-              setState(() {
-                _selectedTextBoxId = null;
-                _selectedImageId = null;
-                _currentMode = EditorMode.questionCrop;
-                _cropStartPoint = null;
-                _cropEndPoint = null;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✂️ Ekranda kaydetmek istediğiniz sorunun etrafına parmağınızla kutu çizin.'),
-                  backgroundColor: Color(0xFFF59E0B),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-          ),
-        ],
+                  _currentMode = EditorMode.questionCrop;
+                  _cropStartPoint = null;
+                  _cropEndPoint = null;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✂️ Ekranda kaydetmek istediğiniz sorunun etrafına parmağınızla kutu çizin.'),
+                    backgroundColor: Color(0xFFF59E0B),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1378,11 +1385,102 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
       } else if (_activeTool == 'Highlighter') {
         final highlighterWidth = (_currentStrokeWidth * 3.5).clamp(8.0, 60.0);
         controller.setStyle(color: _currentColor.withValues(alpha: 0.38), strokeWidth: highlighterWidth);
+      } else if (_activeTool == 'Eraser') {
+        final eraserWidth = (_currentStrokeWidth * 2.5).clamp(4.0, 80.0);
+        controller.setStyle(color: Colors.white, strokeWidth: eraserWidth);
       } else {
         controller.setStyle(color: _currentColor, strokeWidth: _currentStrokeWidth);
       }
       
       debugPrint('Tool applied successfully. Current PaintContent: ${controller.currentContent.runtimeType}');
+  }
+
+  Widget _buildDrawingToolbarContent() {
+    final isEraser = _activeTool == 'Eraser' || _activeTool == 'AreaEraser';
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isEraser ? Icons.auto_fix_normal : Icons.line_weight_rounded,
+                color: const Color(0xFF14B8A6),
+                size: 18,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isEraser ? 'Silgi Boyutu:' : 'Uç Boyutu:',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
+              ),
+              SizedBox(
+                width: 120,
+                child: Slider(
+                  value: _currentStrokeWidth.clamp(1.0, 40.0),
+                  min: 1.0,
+                  max: 40.0,
+                  activeColor: const Color(0xFF14B8A6),
+                  inactiveColor: Colors.white24,
+                  onChanged: (val) {
+                    setState(() {
+                      _currentStrokeWidth = val;
+                      _applyDrawingToolToActivePage();
+                    });
+                  },
+                ),
+              ),
+              Text(
+                isEraser ? '${(_currentStrokeWidth * 2.5).toInt()}px' : '${_currentStrokeWidth.toInt()}px',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+              ),
+            ],
+          ),
+          if (!isEraser) ...[
+            const VerticalDivider(),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Colors.white,
+                Colors.black,
+                Colors.red,
+                Colors.blue,
+                Colors.green,
+                Colors.amber,
+                Colors.orange,
+                Colors.purple,
+                const Color(0xFF14B8A6),
+              ].map((c) {
+                final isSelected = _currentColor.value == c.value;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _currentColor = c;
+                      _applyDrawingToolToActivePage();
+                    });
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.white : Colors.white24,
+                        width: isSelected ? 2.5 : 1.0,
+                      ),
+                    ),
+                    child: isSelected ? Icon(Icons.check_rounded, size: 12, color: c == Colors.white ? Colors.black : Colors.white) : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildTextToolbarContent() {
@@ -1853,145 +1951,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
 
 
-  Widget _buildDrawingToolbarContent() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _ToolbarAction(
-            icon: Icons.brush, 
-            label: 'Kalem', 
-            active: _activeTool == 'SmoothLine',
-            onTap: () {
-              setState(() => _activeTool = 'SmoothLine');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.square_outlined, 
-            label: 'Kare', 
-            active: _activeTool == 'Rectangle',
-            onTap: () {
-              setState(() => _activeTool = 'Rectangle');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.circle_outlined, 
-            label: 'Daire', 
-            active: _activeTool == 'Circle',
-            onTap: () {
-              setState(() => _activeTool = 'Circle');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.horizontal_rule, 
-            label: 'Çizgi', 
-            active: _activeTool == 'StraightLine',
-            onTap: () {
-              setState(() => _activeTool = 'StraightLine');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.arrow_right_alt, 
-            label: 'Ok', 
-            active: _activeTool == 'ArrowContent',
-            onTap: () {
-              setState(() => _activeTool = 'ArrowContent');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.auto_fix_normal, 
-            label: 'Silgi', 
-            active: _activeTool == 'Eraser',
-            onTap: () {
-              setState(() => _activeTool = 'Eraser');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.crop_free, 
-            label: 'Alan Silgisi', 
-            active: _activeTool == 'AreaEraser',
-            onTap: () {
-              setState(() => _activeTool = 'AreaEraser');
-              _applyDrawingToolToActivePage();
-            },
-          ),
-          const VerticalDivider(),
-          _ToolbarAction(
-            icon: Icons.delete_sweep, 
-            label: 'Tümünü Sil', 
-            onTap: () {
-              final pageData = _pages[_activePageIndex];
-              setState(() {
-                pageData.deletedContentsBackup = pageData.controller.getJsonList();
-                pageData.controller.clear();
-                _hasChanges = true;
-              });
-            },
-          ),
-          _ToolbarAction(
-            icon: Icons.undo, 
-            label: 'Geri Al', 
-            onTap: () {
-              final pageData = _pages[_activePageIndex];
-              if (pageData.controller.getJsonList().isEmpty && pageData.deletedContentsBackup != null) {
-                setState(() {
-                  final contents = pageData.deletedContentsBackup!.map((e) => _parseJsonToContent(e)).whereType<PaintContent>().toList();
-                  pageData.controller.addContents(contents);
-                  pageData.deletedContentsBackup = null;
-                  _hasChanges = true;
-                });
-              } else {
-                pageData.controller.undo();
-              }
-            },
-          ),
-          const VerticalDivider(),
-          // Stroke Width Slider
-          SizedBox(
-            width: 100,
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: Colors.white.withOpacity(0.3),
-                thumbColor: Colors.white,
-                overlayColor: Colors.white.withOpacity(0.2),
-                trackHeight: 3.0,
-              ),
-              child: Slider(
-                value: _currentStrokeWidth,
-                min: 1.0,
-                max: 20.0,
-                onChanged: (val) {
-                  setState(() {
-                    _currentStrokeWidth = val;
-                    _applyDrawingToolToActivePage();
-                  });
-                },
-              ),
-            ),
-          ),
-          const VerticalDivider(),
-          Row(
-            children: [
-              _ColorDot(color: Colors.black, onSelect: _setDrawingColor, active: _currentColor == Colors.black),
-              _ColorDot(color: Colors.red, onSelect: _setDrawingColor, active: _currentColor == Colors.red),
-              _ColorDot(color: Colors.blue, onSelect: _setDrawingColor, active: _currentColor == Colors.blue),
-              _ColorDot(color: Colors.green, onSelect: _setDrawingColor, active: _currentColor == Colors.green),
-              _ColorDot(color: Colors.orange, onSelect: _setDrawingColor, active: _currentColor == Colors.orange),
-              _ColorDot(color: Colors.purple, onSelect: _setDrawingColor, active: _currentColor == Colors.purple),
-              _ColorDot(color: Colors.teal, onSelect: _setDrawingColor, active: _currentColor == Colors.teal),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+
 
   void _setDrawingColor(Color color) {
     setState(() {
