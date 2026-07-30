@@ -204,8 +204,8 @@ class PhotoNoteProvider extends ChangeNotifier {
     return newNote;
   }
 
-  /// Add extra images to an existing photo note
-  Future<void> addExtraImagesToNote(String noteId, List<File> imageFiles) async {
+  /// Add extra images to an existing photo note (optionally marked as question)
+  Future<void> addExtraImagesToNote(String noteId, List<File> imageFiles, {bool isQuestion = false}) async {
     if (imageFiles.isEmpty) return;
 
     final box = Hive.box(_boxName);
@@ -216,6 +216,7 @@ class PhotoNoteProvider extends ChangeNotifier {
     final directory = await getApplicationDocumentsDirectory();
     final List<String> newPaths = List<String>.from(existingNote.imagePaths);
     final List<String> newNotes = List<String>.from(existingNote.imageNotes);
+    final List<bool> newFlags = List<bool>.from(existingNote.questionFlags);
 
     for (var i = 0; i < imageFiles.length; i++) {
       final file = imageFiles[i];
@@ -225,11 +226,38 @@ class PhotoNoteProvider extends ChangeNotifier {
       final saved = await file.copy(targetPath);
       newPaths.add(saved.path);
       newNotes.add('');
+      newFlags.add(isQuestion);
     }
 
     final updatedNote = existingNote.copyWith(
       imagePaths: newPaths,
       imageNotes: newNotes,
+      questionFlags: newFlags,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(noteId, updatedNote.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Toggle question flag for a specific image index
+  Future<void> toggleQuestionFlag(String noteId, int imageIndex) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existingNote = PhotoNote.fromMap(rawData);
+    final flags = List<bool>.from(existingNote.questionFlags);
+    while (flags.length < existingNote.imagePaths.length) {
+      flags.add(false);
+    }
+
+    if (imageIndex >= 0 && imageIndex < flags.length) {
+      flags[imageIndex] = !flags[imageIndex];
+    }
+
+    final updatedNote = existingNote.copyWith(
+      questionFlags: flags,
       updatedAt: DateTime.now(),
     );
 
@@ -246,12 +274,16 @@ class PhotoNoteProvider extends ChangeNotifier {
     final existingNote = PhotoNote.fromMap(rawData);
     final paths = List<String>.from(existingNote.imagePaths);
     final notes = List<String>.from(existingNote.imageNotes);
+    final flags = List<bool>.from(existingNote.questionFlags);
 
     if (imageIndex < 0 || imageIndex >= paths.length) return;
 
     final removedPath = paths.removeAt(imageIndex);
     if (imageIndex < notes.length) {
       notes.removeAt(imageIndex);
+    }
+    if (imageIndex < flags.length) {
+      flags.removeAt(imageIndex);
     }
     try {
       final file = File(removedPath);
@@ -271,6 +303,7 @@ class PhotoNoteProvider extends ChangeNotifier {
       imagePath: paths.first,
       imagePaths: paths,
       imageNotes: notes,
+      questionFlags: flags,
       updatedAt: DateTime.now(),
     );
 

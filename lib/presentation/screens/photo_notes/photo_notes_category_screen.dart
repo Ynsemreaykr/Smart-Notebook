@@ -954,6 +954,38 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
     );
   }
 
+  void _openCategoryQuestionViewer(BuildContext context, PhotoNoteProvider provider) {
+    final allCategoryNotes = widget.category == 'Tümü'
+        ? provider.photoNotes
+        : provider.photoNotes.where((n) => n.category.trim() == widget.category.trim() || n.category.startsWith('${widget.category} / ')).toList();
+
+    final List<_CategoryQuestionItem> questionItems = [];
+    for (final note in allCategoryNotes) {
+      for (int i = 0; i < note.imagePaths.length; i++) {
+        final isQ = (i < note.questionFlags.length) ? note.questionFlags[i] : false;
+        if (isQ) {
+          questionItems.add(_CategoryQuestionItem(note, i));
+        }
+      }
+    }
+
+    if (questionItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bu bölüme henüz hiç soru eklenmemiş. Görsel kart açıp üst bardaki ❓ butonundan soru ekleyebilirsiniz.'),
+          backgroundColor: Colors.amber,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => _CategoryQuestionSliderDialog(items: questionItems, provider: provider),
+    );
+  }
+
   void _showAddMenu() {
     showModalBottomSheet(
       context: context,
@@ -1077,6 +1109,11 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             styleOverride: const TextStyle(fontWeight: FontWeight.bold),
           ),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.help_outline_rounded, color: Color(0xFFF59E0B)),
+              tooltip: 'Ders / Ünite Soruları',
+              onPressed: () => _openCategoryQuestionViewer(context, context.read<PhotoNoteProvider>()),
+            ),
             IconButton(
               icon: const Icon(Icons.style_rounded),
               tooltip: 'Yeni Bilgi Kartı Ekle',
@@ -1210,12 +1247,48 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                           styleType: AppTextStyleType.headingSmall,
                           styleOverride: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        if (notes.isNotEmpty)
-                          TextButton.icon(
-                            icon: const Icon(Icons.add_rounded, size: 18, color: Colors.white70),
-                            label: const AppText('Görsel Ekle', styleType: AppTextStyleType.caption, color: Colors.white70),
-                            onPressed: () => _showAddEditSheet(),
-                          ),
+                        Row(
+                          children: [
+                            Builder(
+                              builder: (context) {
+                                final allCategoryNotes = widget.category == 'Tümü'
+                                    ? provider.photoNotes
+                                    : provider.photoNotes.where((n) => n.category.trim() == widget.category.trim() || n.category.startsWith('${widget.category} / ')).toList();
+                                
+                                int qCount = 0;
+                                for (final n in allCategoryNotes) {
+                                  for (int i = 0; i < n.questionFlags.length; i++) {
+                                    if (n.questionFlags[i]) qCount++;
+                                  }
+                                }
+
+                                return GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _openCategoryQuestionViewer(context, provider),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF59E0B).withValues(alpha: 0.22),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.help_outline_rounded, size: 16, color: Color(0xFFF59E0B)),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Sorular ($qCount)',
+                                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -1415,6 +1488,178 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryQuestionItem {
+  final PhotoNote note;
+  final int imageIndex;
+  _CategoryQuestionItem(this.note, this.imageIndex);
+}
+
+class _CategoryQuestionSliderDialog extends StatefulWidget {
+  final List<_CategoryQuestionItem> items;
+  final PhotoNoteProvider provider;
+  const _CategoryQuestionSliderDialog({required this.items, required this.provider});
+
+  @override
+  State<_CategoryQuestionSliderDialog> createState() => _CategoryQuestionSliderDialogState();
+}
+
+class _CategoryQuestionSliderDialogState extends State<_CategoryQuestionSliderDialog> {
+  int _currentIndex = 0;
+  late PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.items.isEmpty) {
+      return const SizedBox();
+    }
+
+    final currentItem = widget.items[_currentIndex.clamp(0, widget.items.length - 1)];
+    final note = currentItem.note;
+    final imgIndex = currentItem.imageIndex;
+    final path = (imgIndex < note.imagePaths.length) ? note.imagePaths[imgIndex] : note.imagePath;
+    final imageNoteText = (imgIndex < note.imageNotes.length) ? note.imageNotes[imgIndex] : '';
+
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black.withValues(alpha: 0.8),
+          leading: IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            '❓ ${note.title} • Soru ${_currentIndex + 1} / ${widget.items.length}',
+            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+              tooltip: 'Soruyu Sil',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: const Color(0xFF1E293B),
+                    title: const Row(
+                      children: [
+                        Icon(Icons.help_outline_rounded, color: Colors.redAccent),
+                        SizedBox(width: 8),
+                        Text('Soru Görselini Sil', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                    content: const Text(
+                      'Bu soru görselini ve bağlı çözüm notunu silmek istediğinizden emin misiniz?',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await widget.provider.removeImageFromNote(note.id, imgIndex);
+                          setState(() {
+                            widget.items.removeAt(_currentIndex);
+                            if (widget.items.isEmpty) {
+                              Navigator.pop(context);
+                            } else if (_currentIndex >= widget.items.length) {
+                              _currentIndex = widget.items.length - 1;
+                            }
+                          });
+                        },
+                        child: const Text('Sil', style: TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              itemCount: widget.items.length,
+              onPageChanged: (page) {
+                setState(() {
+                  _currentIndex = page;
+                });
+              },
+              itemBuilder: (context, idx) {
+                final item = widget.items[idx];
+                final p = (item.imageIndex < item.note.imagePaths.length) ? item.note.imagePaths[item.imageIndex] : item.note.imagePath;
+                return InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 5.0,
+                  child: Image.file(
+                    File(p),
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                    errorBuilder: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (imageNoteText.isNotEmpty)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 24,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.lightbulb_rounded, color: Color(0xFFF59E0B), size: 16),
+                          SizedBox(width: 6),
+                          Text('Çözüm / Püf Nokta Notu', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 12)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        imageNoteText,
+                        style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );

@@ -1,15 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_drawing_board/flutter_drawing_board.dart';
 import 'package:flutter_drawing_board/paint_contents.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../../application/providers/page_provider.dart';
 import '../../../application/providers/book_provider.dart';
 import '../../../application/providers/pdf_provider.dart';
 import '../../../application/providers/theme_provider.dart';
+import '../../../application/providers/photo_note_provider.dart';
+import '../../../domain/models/photo_note.dart';
 import '../../../domain/models/overlay_models.dart';
 import '../../../core/constants/app_radius.dart';
 import '../../../core/constants/app_spacing.dart';
@@ -21,7 +26,7 @@ import '../../widgets/bounce_button.dart';
 import '../../widgets/floating_calculator.dart';
 import '../../widgets/floating_book_shortcut.dart';
 
-enum EditorMode { text, drawing, pan }
+enum EditorMode { text, drawing, pan, questionCrop }
 
 class PageData {
   String text;
@@ -130,6 +135,10 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   
   List<PageData> _pages = [PageData()];
   EditorMode _currentMode = EditorMode.pan;
+  bool _isZoomed = false;
+  bool _showUI = true;
+  int _pointerCount = 0;
+
   
   Color _currentColor = Colors.black;
   double _currentStrokeWidth = 3.0;
@@ -143,6 +152,11 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
   TapDownDetails? _doubleTapDetails;
+  
+  // Question crop tool state
+  final GlobalKey _cropBoundaryKey = GlobalKey();
+  Offset? _cropStartPoint;
+  Offset? _cropEndPoint;
   
   /// When bookId is set, maps each _pages[i] to the corresponding NotePage.id
   /// so we can save each page's drawingJson back to its own NotePage record.
@@ -446,84 +460,62 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         }
       },
       child: Scaffold(
-      resizeToAvoidBottomInset: false,
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: TextField(
-          controller: _titleCtrl,
-          style: TextStyle(
-            color: AppColors.textPrimary, 
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-          decoration: const InputDecoration(
-            hintText: 'Bu bölüme isim veriniz',
-            hintStyle: TextStyle(
-              color: Colors.white38,
-              fontSize: 16,
-              fontWeight: FontWeight.normal,
-            ),
-            border: InputBorder.none,
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          ),
-          onChanged: (_) => setState(() => _hasChanges = true),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _showShortcut ? Icons.style_rounded : Icons.style_outlined,
-              color: _showShortcut ? AppColors.glow : null,
-            ),
-            tooltip: 'Görsel & Bilgi Kartları',
-            onPressed: () => setState(() => _showShortcut = !_showShortcut),
-          ),
-          IconButton(
-            icon: Icon(
-              _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
-              color: _showCalculator ? AppColors.glow : null,
-            ),
-            tooltip: 'Hesap Makinesi',
-            onPressed: () => setState(() => _showCalculator = !_showCalculator),
-          ),
-          IconButton(
-            icon: const Icon(Icons.picture_as_pdf),
-            tooltip: 'PDF Olarak Paylaş',
-            onPressed: _exportAsPdf,
-          ),
-        ],
-      ),
-      body: AppContainer(
-        hasGradient: true,
-        child: Stack(
+        resizeToAvoidBottomInset: false,
+        backgroundColor: Colors.black,
+        body: Stack(
           children: [
-            Column(
-              children: [
-                _buildTopInterface(),
-                Expanded(
-                  child: PageView.builder(
-                    controller: _pageController,
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _pages.length,
-                    physics: _currentMode == EditorMode.drawing 
-                        ? const NeverScrollableScrollPhysics() 
-                        : const ClampingScrollPhysics(),
-                    onPageChanged: (index) {
-                      setState(() {
-                        _activePageIndex = index;
-                        if (_currentMode == EditorMode.drawing) {
-                           _applyDrawingToolToActivePage();
-                        }
-                      });
-                    },
-                    itemBuilder: (context, index) {
-                      return _buildPageFrame(index);
-                    },
-                  ),
-                ),
-                _buildBottomBar(),
-              ],
+            // Layer 0: Full-screen PageView
+            PageView.builder(
+              controller: _pageController,
+              scrollDirection: Axis.horizontal,
+              itemCount: _pages.length,
+              physics: (_currentMode == EditorMode.drawing || _isZoomed) 
+                  ? const NeverScrollableScrollPhysics() 
+                  : const BouncingScrollPhysics(),
+              onPageChanged: (index) {
+                setState(() {
+                  _activePageIndex = index;
+                  _isZoomed = false;
+                  if (_currentMode == EditorMode.drawing) {
+                     _applyDrawingToolToActivePage();
+                  }
+                });
+              },
+              itemBuilder: (context, index) {
+                return _buildPageFrame(index);
+              },
             ),
+
+            // Layer 1: Floating Transparent Top Bar & Toolbars
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _showUI ? 1.0 : 0.0,
+                child: IgnorePointer(
+                  ignoring: !_showUI,
+                  child: _buildTopInterface(),
+                ),
+              ),
+            ),
+
+            // Layer 2: Floating Transparent Bottom Bar
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 200),
+                opacity: _showUI ? 1.0 : 0.0,
+                child: IgnorePointer(
+                  ignoring: !_showUI,
+                  child: _buildBottomBar(),
+                ),
+              ),
+            ),
+
             if (_showCalculator)
               FloatingCalculator(
                 onClose: () => setState(() => _showCalculator = false),
@@ -536,8 +528,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           ],
         ),
       ),
-    ),
     );
+
   }
 
   void _handleDoubleTap() {
@@ -561,143 +553,574 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     final hasBg = pageData.backgroundImageBase64 != null && pageData.backgroundImageBase64!.isNotEmpty;
     final isPanMode = _currentMode == EditorMode.pan;
     
-    return InteractiveViewer(
-      transformationController: _transformationController,
-      minScale: 0.8,
-      maxScale: 5.0,
-      clipBehavior: Clip.none,
-      panEnabled: isPanMode,
-      scaleEnabled: isPanMode,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onDoubleTapDown: (details) => _doubleTapDetails = details,
-        onDoubleTap: _handleDoubleTap,
-        onTap: () {
-          setState(() {
-            _selectedTextBoxId = null;
-            _selectedImageId = null;
-          });
+    return Listener(
+      onPointerDown: (event) {
+        _pointerCount++;
+        if (_pointerCount >= 2 && !_isZoomed) {
+          setState(() => _isZoomed = true);
+        }
+      },
+      onPointerUp: (event) {
+        _pointerCount = (_pointerCount > 1) ? _pointerCount - 1 : 0;
+        if (_pointerCount == 0) {
+          final scale = _transformationController.value.getMaxScaleOnAxis();
+          if (scale <= 1.05 && _isZoomed) {
+            setState(() => _isZoomed = false);
+          }
+        }
+      },
+      onPointerCancel: (event) {
+        _pointerCount = 0;
+        final scale = _transformationController.value.getMaxScaleOnAxis();
+        if (scale <= 1.05 && _isZoomed) {
+          setState(() => _isZoomed = false);
+        }
+      },
+      child: InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 0.8,
+        maxScale: 5.0,
+        clipBehavior: Clip.none,
+        panEnabled: isPanMode,
+        scaleEnabled: isPanMode,
+        onInteractionUpdate: (details) {
+          final scale = _transformationController.value.getMaxScaleOnAxis();
+          final zoomed = scale > 1.05;
+          if (zoomed != _isZoomed) {
+            setState(() => _isZoomed = zoomed);
+          }
         },
-        child: AppCard(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          backgroundColor: hasBg ? Colors.white : AppColors.surface,
-          borderColor: AppColors.textMuted.withValues(alpha: 0.15),
-          padding: EdgeInsets.zero,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 1. Arka Plan: PDF/Görsel A4 oranında (Basık Değil)
-              if (hasBg)
-                Positioned.fill(
-                  child: Center(
-                    child: Image.memory(
-                      base64Decode(pageData.backgroundImageBase64!),
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTapDown: (details) => _doubleTapDetails = details,
+          onDoubleTap: _handleDoubleTap,
+          onTap: () {
+            if (_currentMode == EditorMode.pan) {
+              setState(() {
+                _showUI = !_showUI;
+                _selectedTextBoxId = null;
+                _selectedImageId = null;
+              });
+            } else {
+              setState(() {
+                _selectedTextBoxId = null;
+                _selectedImageId = null;
+              });
+            }
+          },
+          child: RepaintBoundary(
+            key: _cropBoundaryKey,
+            child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            color: Colors.black,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 1. Arka Plan: PDF/Görsel tam ekran (BoxFit.contain)
+                if (hasBg)
+                  Positioned.fill(
+                    child: Center(
+                      child: Image.memory(
+                        base64Decode(pageData.backgroundImageBase64!),
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+
+              // 2. Text Editor — arka plan yoksa göster
+              if (!hasBg)
+                Container(
+                  color: const Color(0xFF0F172A),
+                  padding: const EdgeInsets.fromLTRB(20, 100, 20, 100),
+                  child: IgnorePointer(
+                    ignoring: !isTextMode,
+                    child: TextField(
+                      controller: pageData.textController,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Metin girmek için dokunun...',
+                        hintStyle: TextStyle(color: Colors.white38),
+                        filled: false,
+                      ),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: pageData.fontSize,
+                        fontWeight: pageData.isBold ? FontWeight.bold : FontWeight.normal,
+                        fontStyle: pageData.isItalic ? FontStyle.italic : FontStyle.normal,
+                        height: 1.5,
+                      ),
+                      onChanged: (val) {
+                        pageData.text = val;
+                        if (!_hasChanges) setState(() => _hasChanges = true);
+                      },
                     ),
                   ),
                 ),
+              
+              // 3. Image Overlays
+              ...pageData.imageOverlays.map((img) => _buildImageOverlay(img, pageData)),
+              
+              // 4. TextBox Overlays
+              ...pageData.textBoxOverlays.map((tb) => _buildTextBoxOverlay(tb, pageData)),
 
-            // 2. Text Editor — arka plan yoksa göster, varsa gizle
-            if (!hasBg)
+              // 5. Drawing Board
               IgnorePointer(
-                ignoring: !isTextMode,
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: TextField(
-                    controller: pageData.textController,
-                    maxLines: null,
-                    expands: true,
-                    textAlignVertical: TextAlignVertical.top,
-                    decoration: const InputDecoration(
-                      border: InputBorder.none,
-                      hintText: 'Metin girmek için dokunun...',
-                      filled: false,
-                    ),
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: pageData.fontSize,
-                      fontWeight: pageData.isBold ? FontWeight.bold : FontWeight.normal,
-                      fontStyle: pageData.isItalic ? FontStyle.italic : FontStyle.normal,
-                      height: 1.5,
-                    ),
-                    onChanged: (val) {
-                      pageData.text = val;
-                      if (!_hasChanges) setState(() => _hasChanges = true);
-                    },
-                  ),
-                ),
-              ),
-            
-            // 3. Image Overlays
-            ...pageData.imageOverlays.map((img) => _buildImageOverlay(img, pageData)),
-            
-            // 4. TextBox Overlays
-            ...pageData.textBoxOverlays.map((tb) => _buildTextBoxOverlay(tb, pageData)),
-
-            // 5. Drawing Board — şeffaf arka planla arka planı kapatmaz
-            IgnorePointer(
-              ignoring: !isDrawingMode,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return DrawingBoard(
-                    controller: pageData.controller,
-                    background: Container(
-                      width: constraints.maxWidth,
-                      height: constraints.maxHeight,
-                      color: Colors.transparent,
-                    ),
-                    boardConstrained: true,
-                    onPointerDown: (_) {
-                      if (!_hasChanges) setState(() => _hasChanges = true);
-                    },
-                    onPointerUp: (_) {
-                      if (_activeTool == 'AreaEraser') {
-                        final contents = pageData.controller.getJsonList();
-                        if (contents.isNotEmpty) {
-                          final lastItem = contents.last;
-                          if (lastItem['type'] == 'Rectangle') {
-                            final sp = lastItem['startPoint'];
-                            final ep = lastItem['endPoint'];
-                            if (sp != null && ep != null) {
-                              List<Map<String, dynamic>> updatedContents = List.from(contents);
-                              updatedContents.removeLast();
-                              
-                              Map<String, dynamic> eraserRect = Map.from(lastItem);
-                              eraserRect['paint'] = {
-                                "blendMode": 0,
-                                "color": 0,
-                                "filterQuality": 0,
-                                "invertColors": false,
-                                "isAntiAlias": false,
-                                "strokeCap": 0,
-                                "strokeJoin": 0,
-                                "strokeWidth": 0.0,
-                                "style": 0
-                              };
-                              updatedContents.add(eraserRect);
-                              
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                pageData.controller.clear();
-                                if (updatedContents.isNotEmpty) {
-                                  pageData.controller.addContents(updatedContents.map((e) => _parseJsonToContent(e)).whereType<PaintContent>().toList());
-                                }
-                              });
+                ignoring: !isDrawingMode,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return DrawingBoard(
+                      controller: pageData.controller,
+                      background: Container(
+                        width: constraints.maxWidth,
+                        height: constraints.maxHeight,
+                        color: Colors.transparent,
+                      ),
+                      boardConstrained: true,
+                      onPointerDown: (_) {
+                        if (!_hasChanges) setState(() => _hasChanges = true);
+                      },
+                      onPointerUp: (_) {
+                        if (_activeTool == 'AreaEraser') {
+                          final contents = pageData.controller.getJsonList();
+                          if (contents.isNotEmpty) {
+                            final lastItem = contents.last;
+                            if (lastItem['type'] == 'Rectangle') {
+                              final sp = lastItem['startPoint'];
+                              final ep = lastItem['endPoint'];
+                              if (sp != null && ep != null) {
+                                List<Map<String, dynamic>> updatedContents = List.from(contents);
+                                updatedContents.removeLast();
+                                
+                                Map<String, dynamic> eraserRect = Map.from(lastItem);
+                                eraserRect['paint'] = {
+                                  "blendMode": 0,
+                                  "color": 0,
+                                  "filterQuality": 0,
+                                  "invertColors": false,
+                                  "isAntiAlias": false,
+                                  "strokeCap": 0,
+                                  "strokeJoin": 0,
+                                  "strokeWidth": 0.0,
+                                  "style": 0
+                                };
+                                updatedContents.add(eraserRect);
+                                
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  pageData.controller.clear();
+                                  if (updatedContents.isNotEmpty) {
+                                    pageData.controller.addContents(updatedContents.map((e) => _parseJsonToContent(e)).whereType<PaintContent>().toList());
+                                  }
+                                });
+                              }
                             }
                           }
                         }
+                      },
+                    );
+                  }
+                ),
+              ),
+              // 5. Question crop rectangle overlay & pointer listener
+              if (_currentMode == EditorMode.questionCrop)
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (event) {
+                      final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
+                      if (box != null) {
+                        final localPos = box.globalToLocal(event.position);
+                        setState(() {
+                          _cropStartPoint = localPos;
+                          _cropEndPoint = localPos;
+                        });
                       }
                     },
-                  );
-                }
-              ),
-            ),
-          ],
+                    onPointerMove: (event) {
+                      if (_cropStartPoint != null) {
+                        final RenderBox? box = _cropBoundaryKey.currentContext?.findRenderObject() as RenderBox?;
+                        if (box != null) {
+                          final localPos = box.globalToLocal(event.position);
+                          setState(() {
+                            _cropEndPoint = localPos;
+                          });
+                        }
+                      }
+                    },
+                    onPointerUp: (event) async {
+                      if (_cropStartPoint != null && _cropEndPoint != null) {
+                        final start = _cropStartPoint!;
+                        final end = _cropEndPoint!;
+                        setState(() {
+                          _cropStartPoint = null;
+                          _cropEndPoint = null;
+                        });
+                        await _cropAndOpenSaveQuestionModal(start, end);
+                      }
+                    },
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      child: Builder(
+                        builder: (context) {
+                          if (_cropStartPoint == null || _cropEndPoint == null) {
+                            return const SizedBox();
+                          }
+                          final left = math.min(_cropStartPoint!.dx, _cropEndPoint!.dx);
+                          final top = math.min(_cropStartPoint!.dy, _cropEndPoint!.dy);
+                          final width = (_cropStartPoint!.dx - _cropEndPoint!.dx).abs();
+                          final height = (_cropStartPoint!.dy - _cropEndPoint!.dy).abs();
+
+                          return Stack(
+                            children: [
+                              Positioned(
+                                left: left,
+                                top: top,
+                                width: width,
+                                height: height,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B).withValues(alpha: 0.25),
+                                    border: Border.all(color: const Color(0xFFF59E0B), width: 2.5),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(Icons.content_cut_rounded, color: Color(0xFFF59E0B), size: 28),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     ),
+    ),
   );
 }
+
+
+
+  Future<void> _cropAndOpenSaveQuestionModal(Offset start, Offset end) async {
+    try {
+      final RenderRepaintBoundary? boundary = _cropBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+
+      final double pRatio = 2.5;
+      final ui.Image fullImg = await boundary.toImage(pixelRatio: pRatio);
+
+      final RenderBox box = _cropBoundaryKey.currentContext!.findRenderObject() as RenderBox;
+      final double scaleX = fullImg.width / box.size.width;
+      final double scaleY = fullImg.height / box.size.height;
+
+      final left = (math.min(start.dx, end.dx) * scaleX).clamp(0.0, fullImg.width.toDouble());
+      final top = (math.min(start.dy, end.dy) * scaleY).clamp(0.0, fullImg.height.toDouble());
+      final right = (math.max(start.dx, end.dx) * scaleX).clamp(0.0, fullImg.width.toDouble());
+      final bottom = (math.max(start.dy, end.dy) * scaleY).clamp(0.0, fullImg.height.toDouble());
+
+      final width = right - left;
+      final height = bottom - top;
+
+      if (width < 25 || height < 25) {
+        setState(() => _currentMode = EditorMode.pan);
+        return;
+      }
+
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      final srcRect = Rect.fromLTWH(left, top, width, height);
+      final destRect = Rect.fromLTWH(0, 0, width, height);
+
+      canvas.drawImageRect(fullImg, srcRect, destRect, Paint());
+      final picture = recorder.endRecording();
+      final croppedImage = await picture.toImage(width.toInt(), height.toInt());
+
+      final byteData = await croppedImage.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final filePath = '${dir.path}/question_crop_$timestamp.png';
+      final file = File(filePath);
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+
+      setState(() => _currentMode = EditorMode.pan);
+
+      if (mounted) {
+        _showSaveQuestionModal(context, file);
+      }
+    } catch (e) {
+      debugPrint('Error cropping question image: $e');
+      setState(() => _currentMode = EditorMode.pan);
+    }
+  }
+
+  void _showSaveQuestionModal(BuildContext context, File croppedFile) {
+    final provider = context.read<PhotoNoteProvider>();
+    final categories = provider.customCategories;
+
+    String selectedCategory = categories.isNotEmpty ? categories.first : 'Tümü';
+    String? selectedSubUnit;
+    PhotoNote? selectedNote;
+    bool isQuestionType = true;
+    final noteTextCtrl = TextEditingController();
+    final newCardTitleCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final subCategories = provider.getSubCategories(selectedCategory);
+            final categoryFilter = selectedSubUnit != null ? '$selectedCategory / $selectedSubUnit' : selectedCategory;
+
+            final availableNotes = selectedCategory == 'Tümü'
+                ? provider.photoNotes
+                : provider.photoNotes.where((n) => n.category.trim() == categoryFilter.trim() || n.category.startsWith('$categoryFilter / ')).toList();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.content_cut_rounded, color: Color(0xFFF59E0B), size: 22),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Kırpılan Soruyu Görsel Karta Kaydet',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    Container(
+                      height: 140,
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(croppedFile, fit: BoxFit.contain),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    Row(
+                      children: [
+                        const Icon(Icons.folder_open_rounded, color: Color(0xFF0EA5E9), size: 18),
+                        const SizedBox(width: 8),
+                        const Text('Ders / Klasör:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButton<String>(
+                            value: categories.contains(selectedCategory) ? selectedCategory : (categories.isNotEmpty ? categories.first : 'Tümü'),
+                            dropdownColor: const Color(0xFF0F172A),
+                            isExpanded: true,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            items: (categories.isEmpty ? ['Tümü'] : categories).map((cat) {
+                              return DropdownMenuItem(value: cat, child: Text(cat));
+                            }).toList(),
+                            onChanged: (val) {
+                              if (val != null) {
+                                setModalState(() {
+                                  selectedCategory = val;
+                                  selectedSubUnit = null;
+                                  selectedNote = null;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (subCategories.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.bookmark_rounded, color: Color(0xFF14B8A6), size: 18),
+                          const SizedBox(width: 8),
+                          const Text('Ünite:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButton<String?>(
+                              value: selectedSubUnit,
+                              dropdownColor: const Color(0xFF0F172A),
+                              isExpanded: true,
+                              hint: const Text('Tüm Üniteler', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                              style: const TextStyle(color: Colors.white, fontSize: 13),
+                              items: [
+                                const DropdownMenuItem<String?>(value: null, child: Text('Tüm Üniteler')),
+                                ...subCategories.map((sub) => DropdownMenuItem<String?>(value: sub, child: Text(sub))),
+                              ],
+                              onChanged: (val) {
+                                setModalState(() {
+                                  selectedSubUnit = val;
+                                  selectedNote = null;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 6),
+
+                    Row(
+                      children: [
+                        const Icon(Icons.style_rounded, color: Color(0xFFF59E0B), size: 18),
+                        const SizedBox(width: 8),
+                        const Text('Görsel Kart:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButton<PhotoNote?>(
+                            value: selectedNote,
+                            dropdownColor: const Color(0xFF0F172A),
+                            isExpanded: true,
+                            hint: const Text('+ Yeni Görsel Kart Oluştur', style: TextStyle(color: Color(0xFFF59E0B), fontSize: 13, fontWeight: FontWeight.bold)),
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            items: [
+                              const DropdownMenuItem<PhotoNote?>(
+                                value: null,
+                                child: Text('+ Yeni Görsel Kart Oluştur', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                              ),
+                              ...availableNotes.map((n) => DropdownMenuItem<PhotoNote?>(value: n, child: Text(n.title))),
+                            ],
+                            onChanged: (val) {
+                              setModalState(() {
+                                selectedNote = val;
+                              });
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    if (selectedNote == null) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: newCardTitleCtrl,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        decoration: InputDecoration(
+                          labelText: 'Yeni Kart Başlığı (Örn: Dağlar Soru Bankası)',
+                          labelStyle: const TextStyle(color: Colors.white70, fontSize: 12),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 10),
+
+                    TextField(
+                      controller: noteTextCtrl,
+                      maxLines: 2,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        labelText: 'Çözüm / Püf Nokta Notu (Opsiyonel)',
+                        labelStyle: const TextStyle(color: Colors.white70, fontSize: 12),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.check_circle_rounded, color: Colors.white),
+                      label: const Text('Soruyu Görsel Karta Kaydet', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF59E0B),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () async {
+                        final cat = selectedSubUnit != null ? '$selectedCategory / $selectedSubUnit' : selectedCategory;
+                        final noteText = noteTextCtrl.text.trim();
+
+                        if (selectedNote != null) {
+                          final noteId = selectedNote!.id;
+                          await provider.addExtraImagesToNote(noteId, [croppedFile], isQuestion: isQuestionType);
+                          final reloadedNote = provider.photoNotes.firstWhere((n) => n.id == noteId);
+                          if (noteText.isNotEmpty) {
+                            final newImgIndex = reloadedNote.imagePaths.length - 1;
+                            await provider.updateImageNote(noteId, newImgIndex, noteText);
+                          }
+                          if (mounted) {
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('✂️ Soru "${reloadedNote.title}" kartına eklendi! ✅'),
+                                backgroundColor: const Color(0xFF10B981),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        } else {
+                          final title = newCardTitleCtrl.text.trim().isEmpty ? 'Soru Notu (${DateTime.now().day}/${DateTime.now().month})' : newCardTitleCtrl.text.trim();
+                          final newNote = await provider.addPhotoNote(
+                            title: title,
+                            imageFile: croppedFile,
+                            category: cat,
+                            color: '#1E3A8A',
+                            note: noteText,
+                          );
+                          await provider.toggleQuestionFlag(newNote.id, 0);
+                          if (mounted) {
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('✂️ Yeni soru kartı "$title" oluşturuldu! ✅'),
+                                backgroundColor: const Color(0xFF10B981),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   Widget _buildTopInterface() {
     final hasBg = _pages.isNotEmpty &&
@@ -715,44 +1138,116 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     } else if (!hasBg && _currentMode == EditorMode.text) {
       activePropertyIndex = 0; // Text properties
     } else {
-      activePropertyIndex = 3; // Default to Pan status bar so height is always constant
+      activePropertyIndex = 3;
     }
     
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: _buildMainToolbar(hasBg: hasBg),
-        ),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          height: 66,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.surface.withOpacity(0.95),
-                borderRadius: BorderRadius.circular(AppRadius.large),
-                border: Border.all(color: AppColors.textMuted.withOpacity(0.12)),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 10)],
-              ),
-              child: IndexedStack(
-                index: activePropertyIndex,
+        // Top Header Row matching PhotoNoteViewerScreen style
+        Container(
+          color: Colors.black.withValues(alpha: 0.6),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              child: Row(
                 children: [
-                  _buildTextToolbarContent(),
-                  _buildDrawingToolbarContent(),
-                  _buildTextBoxToolbarContent(),
-                  _buildPanToolbarContent(),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: TextField(
+                      controller: _titleCtrl,
+                      style: const TextStyle(
+                        color: Colors.white, 
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Sayfa Başlığı...',
+                        hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+                      ),
+                      onChanged: (_) => setState(() => _hasChanges = true),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _showShortcut ? Icons.style_rounded : Icons.style_outlined,
+                      color: _showShortcut ? const Color(0xFF14B8A6) : Colors.white70,
+                      size: 22,
+                    ),
+                    tooltip: 'Görsel & Bilgi Kartları',
+                    onPressed: () => setState(() => _showShortcut = !_showShortcut),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
+                      color: _showCalculator ? const Color(0xFF14B8A6) : Colors.white70,
+                      size: 22,
+                    ),
+                    tooltip: 'Hesap Makinesi',
+                    onPressed: () => setState(() => _showCalculator = !_showCalculator),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 22),
+                    tooltip: 'PDF Olarak Paylaş',
+                    onPressed: _exportAsPdf,
+                  ),
                 ],
               ),
             ),
           ),
         ),
+
+        // Main Tools Toolbar (Hareket, Kalem, Fosforlu, Silgi, +Resim)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+          child: _buildMainToolbar(hasBg: hasBg),
+        ),
+
+        // Secondary Property Bar
+        if (activePropertyIndex != 3)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 60,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(15),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10)],
+                ),
+                child: IndexedStack(
+                  index: activePropertyIndex,
+                  children: [
+                    _buildTextToolbarContent(),
+                    _buildDrawingToolbarContent(),
+                    _buildTextBoxToolbarContent(),
+                    _buildPanToolbarContent(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
       ],
     );
   }
+
 
   Widget _buildPanToolbarContent() {
     return const SizedBox.shrink();
@@ -760,16 +1255,17 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildMainToolbar({bool hasBg = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.surface.withOpacity(0.95),
+        color: const Color(0xFF0F172A).withValues(alpha: 0.75),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: AppColors.textMuted.withOpacity(0.12)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, spreadRadius: 1)],
+        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
+        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, spreadRadius: 1)],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
+
           _ToolbarAction(
             icon: Icons.pan_tool_rounded, 
             label: 'Hareket', 
@@ -832,6 +1328,28 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             icon: Icons.add_photo_alternate, 
             label: '+Resim', 
             onTap: _pickImage,
+          ),
+          const VerticalDivider(),
+          _ToolbarAction(
+            icon: Icons.content_cut_rounded,
+            label: 'Soru Kırp',
+            active: _currentMode == EditorMode.questionCrop,
+            onTap: () {
+              setState(() {
+                _selectedTextBoxId = null;
+                _selectedImageId = null;
+                _currentMode = EditorMode.questionCrop;
+                _cropStartPoint = null;
+                _cropEndPoint = null;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✂️ Ekranda kaydetmek istediğiniz sorunun etrafına parmağınızla kutu çizin.'),
+                  backgroundColor: Color(0xFFF59E0B),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -1260,81 +1778,80 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildBottomBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
+      color: Colors.black.withValues(alpha: 0.6),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left),
-              onPressed: _activePageIndex > 0 
-                  ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                  : null,
-            ),
-            const Spacer(),
-            GestureDetector(
-              onTap: _showGoToPageDialog,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: const BoxDecoration(
+            border: Border(top: BorderSide(color: Color(0xFF14B8A6), width: 0.5)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 28),
+                  onPressed: _activePageIndex > 0 
+                      ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                      : null,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.import_contacts_rounded, size: 18, color: AppColors.primary),
-                    const SizedBox(width: 6),
-                    AppText(
-                      'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
-                      styleType: AppTextStyleType.bodyMedium,
-                      styleOverride: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _showGoToPageDialog,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
                     ),
-                    const SizedBox(width: 4),
-                    Icon(Icons.arrow_drop_down, color: AppColors.primary, size: 18),
-                  ],
-                ),
-              ),
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.chevron_right),
-              onPressed: _activePageIndex < _pages.length - 1 
-                  ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                  : null,
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            BounceButton(
-              onTap: _addPage,
-              child: ElevatedButton.icon(
-                onPressed: _addPage,
-                icon: const Icon(Icons.add),
-                label: const AppText('Sayfa Ekle', styleType: AppTextStyleType.label, color: Colors.white),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.medium),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.import_contacts_rounded, size: 18, color: Color(0xFF14B8A6)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_drop_down, color: Color(0xFF14B8A6), size: 18),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 28),
+                  onPressed: _activePageIndex < _pages.length - 1 
+                      ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _addPage,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Sayfa Ekle', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14B8A6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+
+
 
   Widget _buildDrawingToolbarContent() {
     return SingleChildScrollView(

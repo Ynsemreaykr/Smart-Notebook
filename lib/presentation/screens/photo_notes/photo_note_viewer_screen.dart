@@ -37,6 +37,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     '#6B7280', // Grey
   ];
   bool _isZoomed = false;
+  bool _showUI = true; // single-tap toggles top bar + bottom overlay
+  int _pointerCount = 0;
   int _currentPage = 0;
   late PageController _pageController;
   final Map<int, TransformationController> _transformControllers = {};
@@ -1566,8 +1568,106 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 
-  void _showFullScreenImage(BuildContext context, String initialImgPath, int initialIndex, int totalImages, PhotoNote initialNote) {
-    // Already in full-screen viewer
+  void _showAddQuestionOptionsSheet(BuildContext context, PhotoNote note, int currentImgIndex, PhotoNoteProvider provider) {
+    final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_a_photo_rounded, color: Color(0xFFF59E0B)),
+              title: const Text('Galeriden Yeni Soru Görseli Ekle', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.gallery);
+                if (picked != null) {
+                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFF38BDF8)),
+              title: const Text('Kameradan Yeni Soru Görseli Çek', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.camera);
+                if (picked != null) {
+                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                isQuestion ? Icons.help_outline_rounded : Icons.help_outline_rounded,
+                color: isQuestion ? Colors.amber : const Color(0xFF14B8A6),
+              ),
+              title: Text(
+                isQuestion ? 'Bu Görselin "Soru" İşaretini Kaldır' : 'Bu Görseli "Soru" Olarak İşaretle',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await provider.toggleQuestionFlag(note.id, currentImgIndex);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _deleteNoteWithConfirmation(BuildContext context, PhotoNote note, int imageIndex, PhotoNoteProvider provider) {
+    final isQuestion = (imageIndex < note.questionFlags.length) ? note.questionFlags[imageIndex] : false;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: Row(
+          children: [
+            Icon(
+              isQuestion ? Icons.help_outline_rounded : Icons.delete_outline_rounded,
+              color: Colors.redAccent,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isQuestion ? 'Soru Görselini Sil' : 'Görseli Sil',
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Text(
+          isQuestion
+              ? 'Bu soru görselini ve bağlı çözüm notunu silmek istediğinizden emin misiniz?'
+              : 'Bu görseli ve ona ait notları silmek istediğinizden emin misiniz?',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await provider.removeImageFromNote(note.id, imageIndex);
+              if (note.imagePaths.length <= 1) {
+                if (context.mounted) Navigator.pop(context);
+              }
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1654,22 +1754,49 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                   final ctrl = _getTransformController(idx);
                   return LayoutBuilder(
                     builder: (context, constraints) {
-                      return GestureDetector(
-                        onDoubleTapDown: (details) => _handleDoubleTap(details, idx, constraints),
-                        onDoubleTap: () {}, // required to trigger onDoubleTapDown
-                        child: InteractiveViewer(
-                          transformationController: ctrl,
-                          minScale: 0.8,
-                          maxScale: 5.0,
-                          panEnabled: true,
-                          scaleEnabled: true,
-                          child: Image.file(
-                            File(pPath),
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: double.infinity,
-                            errorBuilder: (_, __, ___) => const Center(
-                              child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                      return Listener(
+                        onPointerDown: (event) {
+                          _pointerCount++;
+                          if (_pointerCount >= 2 && !_isZoomed) {
+                            setState(() => _isZoomed = true);
+                          }
+                        },
+                        onPointerUp: (event) {
+                          _pointerCount = (_pointerCount > 1) ? _pointerCount - 1 : 0;
+                          if (_pointerCount == 0) {
+                            final ctrl = _transformControllers[_currentPage];
+                            final scale = ctrl?.value.getMaxScaleOnAxis() ?? 1.0;
+                            if (scale <= 1.05 && _isZoomed) {
+                              setState(() => _isZoomed = false);
+                            }
+                          }
+                        },
+                        onPointerCancel: (event) {
+                          _pointerCount = 0;
+                          final ctrl = _transformControllers[_currentPage];
+                          final scale = ctrl?.value.getMaxScaleOnAxis() ?? 1.0;
+                          if (scale <= 1.05 && _isZoomed) {
+                            setState(() => _isZoomed = false);
+                          }
+                        },
+                        child: GestureDetector(
+                          onTap: () => setState(() => _showUI = !_showUI),
+                          onDoubleTapDown: (details) => _handleDoubleTap(details, idx, constraints),
+                          onDoubleTap: () {}, // required to trigger onDoubleTapDown
+                          child: InteractiveViewer(
+                            transformationController: ctrl,
+                            minScale: 0.8,
+                            maxScale: 5.0,
+                            panEnabled: true,
+                            scaleEnabled: true,
+                            child: Image.file(
+                              File(pPath),
+                              fit: BoxFit.contain,
+                              width: double.infinity,
+                              height: double.infinity,
+                              errorBuilder: (_, __, ___) => const Center(
+                                child: Icon(Icons.broken_image_rounded, size: 48, color: Colors.grey),
+                              ),
                             ),
                           ),
                         ),
@@ -1679,184 +1806,199 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 },
               ),
 
-              // Left Navigation Button
-              if (currentImgIndex > 0 || (folderNotes.indexWhere((n) => n.id == note.id) > 0))
-                Positioned(
-                  left: 6,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 36),
-                      onPressed: prevImageOrCard,
-                    ),
-                  ),
-                ),
-
-              // Right Navigation Button
-              if (currentImgIndex < totalImages - 1 || (folderNotes.indexWhere((n) => n.id == note.id) < folderNotes.length - 1))
-                Positioned(
-                  right: 6,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 36),
-                      onPressed: nextImageOrCard,
-                    ),
-                  ),
-                ),
-
               // Top Header Bar
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: SafeArea(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    color: Colors.black.withValues(alpha: 0.6),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            '${note.title} • Görsel ${currentImgIndex + 1} / $totalImages',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        // Bilgi Kartları Icon
-                        IconButton(
-                          icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
-                          tooltip: 'Bilgi Kartları',
-                          onPressed: () {
-                            _showFlashcardsBottomSheet(context, note, cardIndex: currentImgIndex);
-                          },
-                        ),
-                        const SizedBox(width: 4),
-                        // Kalem / Edit Note Icon
-                        IconButton(
-                          icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
-                          tooltip: 'Notu Düzenle',
-                          onPressed: () {
-                            _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider);
-                          },
-                        ),
-                        const SizedBox(width: 4),
-                        // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                          color: const Color(0xFF1E293B),
-                          onSelected: (val) {
-                            if (val == 'add_image') {
-                              _pickAndAddExtraImage(note);
-                            } else if (val == 'replace_image') {
-                              _showReplaceImagePicker(context, note, currentImgIndex);
-                            } else if (val == 'share') {
-                              _shareImage(note);
-                            } else if (val == 'delete') {
-                              _deleteNote(context, note);
-                            }
-                          },
-                          itemBuilder: (ctx) => [
-                            const PopupMenuItem(
-                              value: 'add_image',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 18),
-                                  SizedBox(width: 8),
-                                  Text('+ Görsel Ekle', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                ],
-                              ),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: _showUI ? 1.0 : 0.0,
+                  child: IgnorePointer(
+                    ignoring: !_showUI,
+                    child: SafeArea(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        color: Colors.black.withValues(alpha: 0.6),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                              onPressed: () => Navigator.pop(context),
                             ),
-                            const PopupMenuItem(
-                              value: 'replace_image',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.published_with_changes_rounded, color: Color(0xFF38BDF8), size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Görseli Değiştir', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                ],
-                              ),
+                            const SizedBox(width: 4),
+                            Builder(
+                              builder: (context) {
+                                final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+                                return Expanded(
+                                  child: Text(
+                                    isQuestion
+                                        ? '${note.title} • ❓ Soru ${currentImgIndex + 1} / $totalImages'
+                                        : '${note.title} • Görsel ${currentImgIndex + 1} / $totalImages',
+                                    style: TextStyle(
+                                      color: isQuestion ? const Color(0xFFF59E0B) : Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              },
                             ),
-                            const PopupMenuItem(
-                              value: 'share',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.share_rounded, color: Colors.white70, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Paylaş', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                ],
-                              ),
+                            Builder(
+                              builder: (context) {
+                                final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+                                return IconButton(
+                                  icon: Icon(
+                                    isQuestion ? Icons.help : Icons.help_outline_rounded,
+                                    color: isQuestion ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                                    size: 22,
+                                  ),
+                                  tooltip: '+ Soru Görseli Ekle / İşaretle',
+                                  onPressed: () {
+                                    _showAddQuestionOptionsSheet(context, note, currentImgIndex, provider);
+                                  },
+                                );
+                              },
                             ),
-                            const PopupMenuItem(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
-                                ],
-                              ),
+                            const SizedBox(width: 4),
+                            // Bilgi Kartları Icon
+                            IconButton(
+                              icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
+                              tooltip: 'Bilgi Kartları',
+                              onPressed: () {
+                                _showFlashcardsBottomSheet(context, note, cardIndex: currentImgIndex);
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            // Kalem / Edit Note Icon
+                            IconButton(
+                              icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
+                              tooltip: 'Notu Düzenle',
+                              onPressed: () {
+                                _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider);
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                              color: const Color(0xFF1E293B),
+                              onSelected: (val) {
+                                if (val == 'add_image') {
+                                  _pickAndAddExtraImage(note);
+                                } else if (val == 'replace_image') {
+                                  _showReplaceImagePicker(context, note, currentImgIndex);
+                                } else if (val == 'share') {
+                                  _shareImage(note);
+                                } else if (val == 'delete') {
+                                  _deleteNoteWithConfirmation(context, note, currentImgIndex, provider);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'add_image',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 18),
+                                      SizedBox(width: 8),
+                                      Text('+ Görsel Ekle', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'replace_image',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.published_with_changes_rounded, color: Color(0xFF38BDF8), size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Görseli Değiştir', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'share',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.share_rounded, color: Colors.white70, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Paylaş', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
 
-              // Bottom Semi-Transparent Scrollable Note Overlay Panel (Without "Not Bölümü" headers or "Düzenle" button)
+              // Bottom Semi-Transparent Scrollable Note Overlay Panel
               if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty)
                 Positioned(
                   bottom: 0,
                   left: 0,
                   right: 0,
-                  child: SafeArea(
-                    top: false,
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 140),
-                      margin: const EdgeInsets.all(16),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
-                        ],
-                      ),
-                      child: Scrollbar(
-                        thumbVisibility: true,
-                        thickness: 3,
-                        radius: const Radius.circular(3),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
-                                if (sIndex > 0) const SizedBox(height: 6),
-                                Text(
-                                  overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
-                                  style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-                                ),
-                              ],
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: _showUI ? 1.0 : 0.0,
+                    child: IgnorePointer(
+                      ignoring: !_showUI,
+                      child: SafeArea(
+                        top: false,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 140),
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
                             ],
+                          ),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            thickness: 3,
+                            radius: const Radius.circular(3),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                    if (sIndex > 0) const SizedBox(height: 6),
+                                    Text(
+                                      overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
+                                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
+
             ],
           ),
         );

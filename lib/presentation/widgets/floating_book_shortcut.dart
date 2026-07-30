@@ -11,6 +11,12 @@ import '../theme/app_theme.dart';
 import '../screens/photo_notes/photo_notes_screen.dart';
 import '../screens/photo_notes/photo_note_viewer_screen.dart';
 
+class _UnitQuestionItem {
+  final PhotoNote note;
+  final int imageIndex;
+  _UnitQuestionItem(this.note, this.imageIndex);
+}
+
 /// A floating, draggable mini replica of the Visual Cards (Görsel Kartlar) menu.
 /// Directly displays subject folders (Coğrafya, Tarih, Biyoloji, etc.)
 /// and allows browsing visual notes & flashcards inside a mini window while reading a book.
@@ -50,6 +56,19 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   // Image & Section Notes state inside Mini Window
   final Map<int, String> _localImageNotes = {};
   final Map<String, TextEditingController> _sectionControllers = {};
+
+  // Unit Questions state
+  List<_UnitQuestionItem>? _activeUnitQuestionList;
+  int? _activeUnitQuestionIndex;
+  PageController? _unitQuestionPageController;
+
+  // Mini-window image preview state
+  final Map<int, TransformationController> _previewTransformControllers = {};
+  PageController? _previewPageController;
+  bool _showPreviewUI = true;
+  bool _isPreviewZoomed = false;
+  int _previewPointerCount = 0;
+  TapDownDetails? _previewDoubleTapDetails;
 
   // Expanded section state inside Mini Window
   int? _expandedSectionImageIndex;
@@ -387,10 +406,35 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
     }
   }
 
+  TransformationController _getPreviewTransformController(int idx) {
+    return _previewTransformControllers.putIfAbsent(idx, () => TransformationController());
+  }
+
+  void _handlePreviewDoubleTap(TapDownDetails details, int idx) {
+    final ctrl = _getPreviewTransformController(idx);
+    final currentScale = ctrl.value.getMaxScaleOnAxis();
+    if (currentScale > 1.05) {
+      ctrl.value = Matrix4.identity();
+      setState(() => _isPreviewZoomed = false);
+    } else {
+      final x = -details.localPosition.dx * 1.5;
+      final y = -details.localPosition.dy * 1.5;
+      ctrl.value = Matrix4.identity()
+        ..translate(x, y)
+        ..scale(2.5);
+      setState(() => _isPreviewZoomed = true);
+    }
+  }
+
   Widget _buildFullWindowImagePreviewInMiniWindow(PhotoNote note, PhotoNoteProvider provider) {
     final index = _previewImageIndex ?? 0;
     final totalImages = note.imagePaths.length;
-    final imgPath = (index < totalImages) ? note.imagePaths[index] : note.imagePath;
+
+    // Initialize/reuse PageController for this preview session
+    if (_previewPageController == null || !_previewPageController!.hasClients) {
+      _previewPageController?.dispose();
+      _previewPageController = PageController(initialPage: index);
+    }
 
     final categoryFilter = _selectedSubUnit != null
         ? '$_selectedCategoryFolder / $_selectedSubUnit'
@@ -403,7 +447,6 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
         ((index < note.imageNotes.length && note.imageNotes[index].isNotEmpty)
             ? note.imageNotes[index]
             : '');
-
     final noteSections = _parseSections(imageNoteText);
 
     return Container(
@@ -412,142 +455,527 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
       color: Colors.black,
       child: Column(
         children: [
-          // Top Header Bar inside Mini Window matching user screenshot
+          // Top Header Bar
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 200),
+            opacity: _showPreviewUI ? 1.0 : 0.0,
+            child: IgnorePointer(
+              ignoring: !_showPreviewUI,
+              child: Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() {
+                        _previewImageIndex = null;
+                        _showPreviewUI = true;
+                        _isPreviewZoomed = false;
+                        _previewPageController?.dispose();
+                        _previewPageController = null;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0EA5E9).withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFF0EA5E9).withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.arrow_back_rounded, size: 16, color: AppTheme.neonBlue),
+                            const SizedBox(width: 4),
+                            Text('Geri', style: TextStyle(fontSize: 12, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 8),
+                    Builder(
+                      builder: (context) {
+                        final isQuestion = (index < note.questionFlags.length) ? note.questionFlags[index] : false;
+                        return Expanded(
+                          child: Text(
+                            isQuestion
+                                ? '${note.title} • ❓ Soru ${index + 1} / $totalImages'
+                                : '${note.title} • Görsel ${index + 1} / $totalImages',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: isQuestion ? const Color(0xFFF59E0B) : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    Builder(
+                      builder: (context) {
+                        final isQuestion = (index < note.questionFlags.length) ? note.questionFlags[index] : false;
+                        return IconButton(
+                          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            isQuestion ? Icons.help : Icons.help_outline_rounded,
+                            color: isQuestion ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                            size: 18,
+                          ),
+                          tooltip: '+ Soru Görseli Ekle / İşaretle',
+                          onPressed: () {
+                            _showAddQuestionOptionsSheet(context, note, index, provider);
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 2),
+                    IconButton(
+                      constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 17),
+                      tooltip: 'Bilgi Kartları',
+                      onPressed: () => _openFlashcardsBottomSheet(context, note, index: index),
+                    ),
+                    const SizedBox(width: 2),
+                    IconButton(
+                      constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 18),
+                      tooltip: 'Notu Düzenle',
+                      onPressed: () {
+                        _addNoteSection(index, note, provider);
+                        _openFullScreenSectionEditor(context, index, 0, note, provider);
+                      },
+                    ),
+                    const SizedBox(width: 2),
+                    IconButton(
+                      constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                      tooltip: 'Görseli / Soruyu Sil',
+                      onPressed: () {
+                        _confirmDeleteImage(context, note, index, provider);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Main Zoomable Image with PageView Swipe
+          Expanded(
+            child: Stack(
+              children: [
+                PageView.builder(
+                  controller: _previewPageController,
+                  physics: _isPreviewZoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const BouncingScrollPhysics(),
+                  itemCount: totalImages,
+                  onPageChanged: (page) {
+                    setState(() {
+                      _previewImageIndex = page;
+                      _isPreviewZoomed = false;
+                    });
+                  },
+                  itemBuilder: (context, idx) {
+                    final pPath = note.imagePaths[idx];
+                    final ctrl = _getPreviewTransformController(idx);
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Listener(
+                          onPointerDown: (event) {
+                            _previewPointerCount++;
+                            if (_previewPointerCount >= 2 && !_isPreviewZoomed) {
+                              setState(() => _isPreviewZoomed = true);
+                            }
+                          },
+                          onPointerUp: (event) {
+                            _previewPointerCount = (_previewPointerCount > 1) ? _previewPointerCount - 1 : 0;
+                            if (_previewPointerCount == 0) {
+                              final scale = ctrl.value.getMaxScaleOnAxis();
+                              if (scale <= 1.05 && _isPreviewZoomed) {
+                                setState(() => _isPreviewZoomed = false);
+                              }
+                            }
+                          },
+                          onPointerCancel: (event) {
+                            _previewPointerCount = 0;
+                            final scale = ctrl.value.getMaxScaleOnAxis();
+                            if (scale <= 1.05 && _isPreviewZoomed) {
+                              setState(() => _isPreviewZoomed = false);
+                            }
+                          },
+                          child: GestureDetector(
+                            onTap: () => setState(() => _showPreviewUI = !_showPreviewUI),
+                            onDoubleTapDown: (details) => _previewDoubleTapDetails = details,
+                            onDoubleTap: () {
+                              if (_previewDoubleTapDetails != null) {
+                                _handlePreviewDoubleTap(_previewDoubleTapDetails!, idx);
+                              }
+                            },
+                            child: InteractiveViewer(
+                              transformationController: ctrl,
+                              minScale: 0.8,
+                              maxScale: 5.0,
+                              panEnabled: true,
+                              scaleEnabled: true,
+                              onInteractionUpdate: (details) {
+                                final scale = ctrl.value.getMaxScaleOnAxis();
+                                final zoomed = scale > 1.05;
+                                if (zoomed != _isPreviewZoomed) {
+                                  setState(() => _isPreviewZoomed = zoomed);
+                                }
+                              },
+                              child: _buildImageWidget(pPath, fit: BoxFit.contain),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+
+                // Bottom Semi-Transparent Scrollable Note Panel
+                if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
+                  Positioned(
+                    bottom: 8,
+                    left: 8,
+                    right: 8,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      opacity: _showPreviewUI ? 1.0 : 0.0,
+                      child: IgnorePointer(
+                        ignoring: !_showPreviewUI,
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 110),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                          ),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            thickness: 3,
+                            radius: const Radius.circular(3),
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
+                                    if (sIndex > 0) const SizedBox(height: 4),
+                                    Text(
+                                      noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
+                                      style: const TextStyle(color: Colors.white, fontSize: 10.5, height: 1.35),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddQuestionOptionsSheet(BuildContext context, PhotoNote note, int currentImgIndex, PhotoNoteProvider provider) {
+    final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_a_photo_rounded, color: Color(0xFFF59E0B)),
+              title: const Text('Galeriden Yeni Soru Görseli Ekle', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.gallery);
+                if (picked != null) {
+                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_rounded, color: Color(0xFF38BDF8)),
+              title: const Text('Kameradan Yeni Soru Görseli Çek', style: TextStyle(color: Colors.white)),
+              onTap: () async {
+                Navigator.pop(ctx);
+                final picker = ImagePicker();
+                final picked = await picker.pickImage(source: ImageSource.camera);
+                if (picked != null) {
+                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                isQuestion ? Icons.help_outline_rounded : Icons.help_outline_rounded,
+                color: isQuestion ? Colors.amber : const Color(0xFF14B8A6),
+              ),
+              title: Text(
+                isQuestion ? 'Bu Görselin "Soru" İşaretini Kaldır' : 'Bu Görseli "Soru" Olarak İşaretle',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await provider.toggleQuestionFlag(note.id, currentImgIndex);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeleteImage(BuildContext context, PhotoNote note, int imageIndex, PhotoNoteProvider provider) {
+    final isQuestion = (imageIndex < note.questionFlags.length) ? note.questionFlags[imageIndex] : false;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        title: Row(
+          children: [
+            Icon(
+              isQuestion ? Icons.help_outline_rounded : Icons.delete_outline_rounded,
+              color: Colors.redAccent,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isQuestion ? 'Soru Görselini Sil' : 'Görseli Sil',
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Text(
+          isQuestion
+              ? 'Bu soru görselini ve bağlı çözüm notunu silmek istediğinizden emin misiniz?'
+              : 'Bu görseli ve ona ait notları silmek istediğinizden emin misiniz?',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await provider.removeImageFromNote(note.id, imageIndex);
+              if (_previewImageIndex != null) {
+                if (_previewImageIndex! >= note.imagePaths.length - 1) {
+                  setState(() {
+                    _previewImageIndex = note.imagePaths.length > 1 ? note.imagePaths.length - 2 : null;
+                  });
+                }
+              }
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_UnitQuestionItem> _getUnitQuestionItems(List<PhotoNote> folderNotes) {
+    final list = <_UnitQuestionItem>[];
+    for (final note in folderNotes) {
+      for (int i = 0; i < note.imagePaths.length; i++) {
+        final isQ = (i < note.questionFlags.length) ? note.questionFlags[i] : false;
+        if (isQ) {
+          list.add(_UnitQuestionItem(note, i));
+        }
+      }
+    }
+    return list;
+  }
+
+  Widget _buildUnitQuestionSliderInMiniWindow(PhotoNoteProvider provider) {
+    if (_activeUnitQuestionList == null || _activeUnitQuestionList!.isEmpty) {
+      return const SizedBox();
+    }
+
+    final items = _activeUnitQuestionList!;
+    final index = (_activeUnitQuestionIndex ?? 0).clamp(0, items.length - 1);
+    final currentItem = items[index];
+    final note = currentItem.note;
+    final imgIndex = currentItem.imageIndex;
+    final pPath = (imgIndex < note.imagePaths.length) ? note.imagePaths[imgIndex] : note.imagePath;
+    final imageNoteText = (imgIndex < note.imageNotes.length) ? note.imageNotes[imgIndex] : '';
+
+    if (_unitQuestionPageController == null) {
+      _unitQuestionPageController = PageController(initialPage: index);
+    }
+
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      color: Colors.black,
+      child: Column(
+        children: [
+          // Header
           Container(
             height: 38,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.7),
-              border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1)),
+              border: const Border(bottom: BorderSide(color: Color(0xFFF59E0B), width: 1)),
             ),
             child: Row(
               children: [
                 GestureDetector(
-                  onTap: () => setState(() => _previewImageIndex = null),
-                  child: Row(
-                    children: [
-                      Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
-                      const SizedBox(width: 2),
-                      Text('Geri', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
-                    ],
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() {
+                    _activeUnitQuestionList = null;
+                    _activeUnitQuestionIndex = null;
+                    _unitQuestionPageController?.dispose();
+                    _unitQuestionPageController = null;
+                  }),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.arrow_back_rounded, size: 16, color: Color(0xFFF59E0B)),
+                        SizedBox(width: 4),
+                        Text('Üniteye Dön', style: TextStyle(fontSize: 12, color: Color(0xFFF59E0B), fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${note.title} • Görsel ${index + 1} / $totalImages',
+                    '❓ ${note.title} • Soru ${index + 1} / ${items.length}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                   ),
                 ),
-                // Kart / Bilgi Kartları Sembolü
                 IconButton(
                   constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                   padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 17),
-                  tooltip: 'Bilgi Kartları',
-                  onPressed: () => _openFlashcardsBottomSheet(context, note, index: index),
-                ),
-                const SizedBox(width: 2),
-                // Kalem / Edit Note Icon
-                IconButton(
-                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-                  padding: EdgeInsets.zero,
-                  icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 18),
-                  tooltip: 'Notu Düzenle (=✏️)',
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                  tooltip: 'Soruyu Sil',
                   onPressed: () {
-                    _addNoteSection(index, note, provider);
-                    _openFullScreenSectionEditor(context, index, 0, note, provider);
+                    _confirmDeleteImage(context, note, imgIndex, provider);
                   },
                 ),
               ],
             ),
           ),
 
-          // Main Zoomable Image & Swipe Gestures & Saydam Note Overlay
+          // PageView Image
           Expanded(
             child: Stack(
               children: [
-                GestureDetector(
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! < -150) {
-                        _nextImageOrCard(folderNotes, note, index);
-                      } else if (details.primaryVelocity! > 150) {
-                        _prevImageOrCard(folderNotes, note, index);
-                      }
-                    }
+                PageView.builder(
+                  controller: _unitQuestionPageController,
+                  physics: _isPreviewZoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const BouncingScrollPhysics(),
+                  itemCount: items.length,
+                  onPageChanged: (page) {
+                    setState(() {
+                      _activeUnitQuestionIndex = page;
+                      _isPreviewZoomed = false;
+                    });
                   },
-                  child: Center(
-                    child: InteractiveViewer(
-                      minScale: 0.8,
-                      maxScale: 3.5,
-                      child: _buildImageWidget(imgPath, fit: BoxFit.contain),
-                    ),
-                  ),
+                  itemBuilder: (context, idx) {
+                    final item = items[idx];
+                    final path = (item.imageIndex < item.note.imagePaths.length) ? item.note.imagePaths[item.imageIndex] : item.note.imagePath;
+                    final tCtrl = _getPreviewTransformController(idx);
+                    return Listener(
+                      onPointerDown: (event) {
+                        _previewPointerCount++;
+                        if (_previewPointerCount >= 2 && !_isPreviewZoomed) {
+                          setState(() => _isPreviewZoomed = true);
+                        }
+                      },
+                      onPointerUp: (event) {
+                        _previewPointerCount = (_previewPointerCount > 1) ? _previewPointerCount - 1 : 0;
+                        if (_previewPointerCount == 0) {
+                          final scale = tCtrl.value.getMaxScaleOnAxis();
+                          if (scale <= 1.05 && _isPreviewZoomed) {
+                            setState(() => _isPreviewZoomed = false);
+                          }
+                        }
+                      },
+                      onPointerCancel: (event) {
+                        _previewPointerCount = 0;
+                        final scale = tCtrl.value.getMaxScaleOnAxis();
+                        if (scale <= 1.05 && _isPreviewZoomed) {
+                          setState(() => _isPreviewZoomed = false);
+                        }
+                      },
+                      child: GestureDetector(
+                        onDoubleTapDown: (details) => _previewDoubleTapDetails = details,
+                        onDoubleTap: () {
+                          if (_previewDoubleTapDetails != null) {
+                            _handlePreviewDoubleTap(_previewDoubleTapDetails!, idx);
+                          }
+                        },
+                        child: InteractiveViewer(
+                          transformationController: tCtrl,
+                          minScale: 0.8,
+                          maxScale: 5.0,
+                          panEnabled: true,
+                          scaleEnabled: true,
+                          child: _buildImageWidget(path, fit: BoxFit.contain),
+                        ),
+                      ),
+                    );
+                  },
                 ),
 
-                // Left Navigation Button
-                Positioned(
-                  left: 4,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_left_rounded, color: Colors.white60, size: 28),
-                      onPressed: () => _prevImageOrCard(folderNotes, note, index),
-                    ),
-                  ),
-                ),
-
-                // Right Navigation Button
-                Positioned(
-                  right: 4,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: IconButton(
-                      icon: const Icon(Icons.chevron_right_rounded, color: Colors.white60, size: 28),
-                      onPressed: () => _nextImageOrCard(folderNotes, note, index),
-                    ),
-                  ),
-                ),
-
-                // Bottom Semi-Transparent Scrollable Note Panel (Without "Not Bölümü" headers or "Düzenle" button)
-                if (imageNoteText.isNotEmpty || noteSections.isNotEmpty)
+                // Bottom note overlay
+                if (imageNoteText.isNotEmpty)
                   Positioned(
-                    bottom: 8,
                     left: 8,
                     right: 8,
+                    bottom: 8,
                     child: Container(
-                      constraints: const BoxConstraints(maxHeight: 110),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A).withValues(alpha: 0.65),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
                       ),
-                      child: Scrollbar(
-                        thumbVisibility: true,
-                        thickness: 3,
-                        radius: const Radius.circular(3),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (int sIndex = 0; sIndex < noteSections.length; sIndex++) ...[
-                                if (sIndex > 0) const SizedBox(height: 4),
-                                Text(
-                                  noteSections[sIndex].isEmpty ? '---' : noteSections[sIndex],
-                                  style: const TextStyle(color: Colors.white, fontSize: 10.5, height: 1.35),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
+                      child: Text(
+                        imageNoteText,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
                       ),
                     ),
                   ),
@@ -694,6 +1122,10 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
   void dispose() {
     _animController.dispose();
     _zoomTransformationController.dispose();
+    for (final ctrl in _previewTransformControllers.values) {
+      ctrl.dispose();
+    }
+    _previewPageController?.dispose();
     super.dispose();
   }
 
@@ -809,6 +1241,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<PhotoNoteProvider>();
     final screenSize = MediaQuery.of(context).size;
     final double width = _windowSize.width.clamp(260.0, screenSize.width - 10.0);
     final double height = _windowSize.height.clamp(280.0, screenSize.height - 40.0);
@@ -913,10 +1346,15 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
 
                         // Main Content Body (Visual Cards & Per-Image Notes)
                         Expanded(
-                          child: _zoomedImagePath != null
-                              ? _buildZoomedImageView()
-                              : _buildVisualCardsMenu(),
+                          child: (_activeUnitQuestionList != null && _activeUnitQuestionList!.isNotEmpty)
+                              ? _buildUnitQuestionSliderInMiniWindow(provider)
+                              : ((_previewImageIndex != null && _selectedPhotoNote != null)
+                                  ? _buildFullWindowImagePreviewInMiniWindow(_selectedPhotoNote!, provider)
+                                  : (_zoomedImagePath != null
+                                      ? _buildZoomedImageView()
+                                      : _buildVisualCardsMenu())),
                         ),
+
                       ],
                     ),
 
@@ -1633,15 +2071,26 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
               Row(
                 children: [
                   GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () => setState(() => _selectedCategoryFolder = null),
-                    child: Row(
-                      children: [
-                        Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
-                        const SizedBox(width: 2),
-                        Text('Dersler', style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
-                      ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0EA5E9).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF0EA5E9).withValues(alpha: 0.5)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.arrow_back_rounded, size: 16, color: AppTheme.neonBlue),
+                          const SizedBox(width: 4),
+                          Text('Dersler', style: TextStyle(fontSize: 12, color: AppTheme.neonBlue, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
                   ),
+
                   const SizedBox(width: 8),
                   Icon(_getCategoryIcon(folderName), size: 14, color: _getCategoryColor(folderName)),
                   const SizedBox(width: 4),
@@ -1726,6 +2175,7 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
             Row(
               children: [
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => setState(() {
                     if (_selectedSubUnit != null) {
                       _selectedSubUnit = null;
@@ -1733,17 +2183,27 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       _selectedCategoryFolder = null;
                     }
                   }),
-                  child: Row(
-                    children: [
-                      Icon(Icons.arrow_back_rounded, size: 14, color: AppTheme.neonBlue),
-                      const SizedBox(width: 2),
-                      Text(
-                        _selectedSubUnit != null ? 'Üniteler' : 'Bölümler',
-                        style: TextStyle(fontSize: 11, color: AppTheme.neonBlue, fontWeight: FontWeight.bold),
-                      ),
-                    ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0EA5E9).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF0EA5E9).withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.arrow_back_rounded, size: 16, color: AppTheme.neonBlue),
+                        const SizedBox(width: 4),
+                        Text(
+                          _selectedSubUnit != null ? 'Üniteler' : 'Bölümler',
+                          style: TextStyle(fontSize: 12, color: AppTheme.neonBlue, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+
                 const SizedBox(width: 8),
                 Icon(_getCategoryIcon(folderName), size: 14, color: _getCategoryColor(folderName)),
                 const SizedBox(width: 4),
@@ -1755,9 +2215,50 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
                   ),
                 ),
-                Text(
-                  '${folderNotes.length} Not',
-                  style: TextStyle(fontSize: 9, color: AppTheme.textMuted),
+                Builder(
+                  builder: (context) {
+                    final unitQuestions = _getUnitQuestionItems(folderNotes);
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${folderNotes.length} Not',
+                          style: TextStyle(fontSize: 9, color: AppTheme.textMuted),
+                        ),
+                        if (unitQuestions.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              setState(() {
+                                _activeUnitQuestionList = unitQuestions;
+                                _activeUnitQuestionIndex = 0;
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withValues(alpha: 0.22),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.help_outline_rounded, size: 12, color: Color(0xFFF59E0B)),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Sorular (${unitQuestions.length})',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -1789,13 +2290,12 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                           final card = folderNotes[index];
                           return GestureDetector(
                             onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PhotoNoteViewerScreen(noteId: card.id),
-                                ),
-                              );
+                              setState(() {
+                                _selectedPhotoNote = card;
+                                _previewImageIndex = 0;
+                              });
                             },
+
                             child: Container(
                               decoration: BoxDecoration(
                                 color: const Color(0xFF2563EB).withValues(alpha: 0.85),
