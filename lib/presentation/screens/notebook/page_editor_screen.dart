@@ -200,6 +200,17 @@ PaintContent? _parseJsonToContent(Map<String, dynamic> data) {
   }
 }
 
+class OcrElementMatch {
+  final String text;
+  final Rect boundingBox;
+  final Size imageSize;
+  OcrElementMatch({
+    required this.text,
+    required this.boundingBox,
+    required this.imageSize,
+  });
+}
+
 class PageEditorScreen extends StatefulWidget {
   final String pageId;
   /// Optional: if provided, all pages of the book are loaded (for PDF import multi-page support).
@@ -287,6 +298,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   int _currentSearchResultIndex = 0;
   final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final Map<int, String> _pageOcrTextCache = {};
+  final Map<int, List<OcrElementMatch>> _pageOcrElementsCache = {};
   
   /// When bookId is set, maps each _pages[i] to the corresponding NotePage.id
   /// so we can save each page's drawingJson back to its own NotePage record.
@@ -1169,12 +1181,79 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                         Positioned.fill(
                           child: Container(
                             color: Colors.white,
-                            child: Center(
-                              child: Image.memory(
-                                base64Decode(pageData.backgroundImageBase64!),
-                                fit: BoxFit.contain,
-                                gaplessPlayback: true,
-                              ),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
+                                final currentQuery = _isSearching ? _normalizeSearchText(_searchCtrl.text.trim()) : '';
+                                final elements = _pageOcrElementsCache[index] ?? [];
+                                final highlightBoxes = <Widget>[];
+
+                                if (currentQuery.isNotEmpty && elements.isNotEmpty) {
+                                  final imgSize = elements.first.imageSize;
+                                  if (imgSize.width > 0 && imgSize.height > 0) {
+                                    final scaleX = containerSize.width / imgSize.width;
+                                    final scaleY = containerSize.height / imgSize.height;
+                                    final scale = math.min(scaleX, scaleY);
+
+                                    final fittedWidth = imgSize.width * scale;
+                                    final fittedHeight = imgSize.height * scale;
+                                    final dx = (containerSize.width - fittedWidth) / 2;
+                                    final dy = (containerSize.height - fittedHeight) / 2;
+
+                                    for (final el in elements) {
+                                      if (el.text.isNotEmpty && (el.text.contains(currentQuery) || currentQuery.contains(el.text))) {
+                                        final box = el.boundingBox;
+                                        final left = dx + box.left * scale - 2;
+                                        final top = dy + box.top * scale - 2;
+                                        final width = box.width * scale + 4;
+                                        final height = box.height * scale + 4;
+
+                                        highlightBoxes.add(
+                                          Positioned(
+                                            left: left,
+                                            top: top,
+                                            width: width,
+                                            height: height,
+                                            child: IgnorePointer(
+                                              child: AnimatedContainer(
+                                                duration: const Duration(milliseconds: 150),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFFE600).withValues(alpha: 0.45),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: const Color(0xFFF59E0B),
+                                                    width: 1.5,
+                                                  ),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: const Color(0xFFFFE600).withValues(alpha: 0.35),
+                                                      blurRadius: 6,
+                                                      spreadRadius: 1,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                }
+
+                                return Stack(
+                                  children: [
+                                    Center(
+                                      child: Image.memory(
+                                        base64Decode(pageData.backgroundImageBase64!),
+                                        fit: BoxFit.contain,
+                                        gaplessPlayback: true,
+                                      ),
+                                    ),
+                                    ...highlightBoxes,
+                                  ],
+                                );
+                              },
                             ),
                           ),
                         )
@@ -2011,6 +2090,14 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     try {
       if (b64 != null && b64.isNotEmpty) {
         final bytes = base64Decode(b64);
+
+        Size imgSize = Size.zero;
+        try {
+          final codec = await ui.instantiateImageCodec(bytes);
+          final frameInfo = await codec.getNextFrame();
+          imgSize = Size(frameInfo.image.width.toDouble(), frameInfo.image.height.toDouble());
+        } catch (_) {}
+
         final tmpDir = await getTemporaryDirectory();
         final tmpFile = File('${tmpDir.path}/ocr_page_${index}_${DateTime.now().millisecondsSinceEpoch}.png');
         await tmpFile.writeAsBytes(bytes);
@@ -2019,7 +2106,25 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         final inputImage = InputImage.fromFile(imageFile);
         final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
         final extracted = _normalizeSearchText(recognizedText.text);
+
+        final List<OcrElementMatch> elements = [];
+        for (final block in recognizedText.blocks) {
+          for (final line in block.lines) {
+            for (final element in line.elements) {
+              final normText = _normalizeSearchText(element.text);
+              if (normText.isNotEmpty) {
+                elements.add(OcrElementMatch(
+                  text: normText,
+                  boundingBox: element.boundingBox,
+                  imageSize: imgSize,
+                ));
+              }
+            }
+          }
+        }
+
         _pageOcrTextCache[index] = extracted;
+        _pageOcrElementsCache[index] = elements;
 
         try { await imageFile.delete(); } catch (_) {}
         return extracted;
@@ -2032,6 +2137,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     }
 
     _pageOcrTextCache[index] = '';
+    _pageOcrElementsCache[index] = [];
     return '';
   }
 
@@ -2143,38 +2249,38 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
     return Row(
       children: [
-        const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 22),
-        const SizedBox(width: 8),
+        const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 24),
+        const SizedBox(width: 10),
         Expanded(
           child: TextField(
             controller: _searchCtrl,
             autofocus: true,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: const TextStyle(color: Colors.white, fontSize: 15),
             decoration: const InputDecoration(
               hintText: 'Kitap içinde kelime ara...',
-              hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+              hintStyle: TextStyle(color: Colors.white38, fontSize: 14),
               border: InputBorder.none,
               isDense: true,
-              contentPadding: EdgeInsets.symmetric(vertical: 6),
+              contentPadding: EdgeInsets.symmetric(vertical: 8),
             ),
             onChanged: _performSearch,
           ),
         ),
         if (_isOcrScanning) ...[
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
           const SizedBox(
-            width: 14,
-            height: 14,
+            width: 16,
+            height: 16,
             child: CircularProgressIndicator(
-              strokeWidth: 2,
+              strokeWidth: 2.2,
               color: Color(0xFF14B8A6),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
         ],
         if (_searchCtrl.text.isNotEmpty) ...[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(10),
@@ -2182,25 +2288,23 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             ),
             child: Text(
               currentMatchDisplay,
-              style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 11, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold),
             ),
           ),
+          const SizedBox(width: 4),
           IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 22),
+            icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 26),
             tooltip: 'Önceki Eşleşme',
             onPressed: matchCount > 0 ? _prevSearchResult : null,
           ),
           IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 26),
             tooltip: 'Sonraki Eşleşme',
             onPressed: matchCount > 0 ? _nextSearchResult : null,
           ),
         ],
         IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 25),
           tooltip: 'Aramayı Kapat',
           onPressed: () {
             setState(() {
@@ -2217,19 +2321,19 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildTopAppBar() {
     return Container(
-      color: Colors.black.withValues(alpha: 0.75),
+      color: Colors.black.withValues(alpha: 0.85),
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: _isSearching
               ? _buildTopSearchBar()
               : Row(
                   children: [
                     // 1. < (Geri Dön)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 24),
+                      tooltip: 'Geri Dön',
                       onPressed: () async {
                         final shouldPop = await _onBackPressed();
                         if (shouldPop && mounted) {
@@ -2237,34 +2341,34 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                         }
                       },
                     ),
+                    const SizedBox(width: 4),
 
                     // 2. Geri Alma (Undo)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.undo_rounded, color: Colors.white70, size: 22),
+                      icon: const Icon(Icons.undo_rounded, color: Colors.white70, size: 25),
                       tooltip: 'Geri Al',
                       onPressed: () {
                         _pages[_activePageIndex].controller.undo();
                         if (!_hasChanges) setState(() => _hasChanges = true);
                       },
                     ),
+                    const SizedBox(width: 4),
 
                     // 3. İleri Alma (Redo)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.redo_rounded, color: Colors.white70, size: 22),
+                      icon: const Icon(Icons.redo_rounded, color: Colors.white70, size: 25),
                       tooltip: 'İleri Al',
                       onPressed: () {
                         _pages[_activePageIndex].controller.redo();
                         if (!_hasChanges) setState(() => _hasChanges = true);
                       },
                     ),
+                    const SizedBox(width: 4),
 
                     // 4. Büyüteç (Kelime Ara)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 23),
-                      tooltip: 'Kelime Ara',
+                      icon: const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 26),
+                      tooltip: 'Kelime Ara (Ctrl+F)',
                       onPressed: () {
                         setState(() {
                           _isSearching = true;
@@ -2278,40 +2382,39 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
                     // 5. Kartlar (Görsel & Bilgi Kartları)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
                       icon: Icon(
                         _showShortcut ? Icons.style_rounded : Icons.style_outlined,
                         color: _showShortcut ? const Color(0xFF14B8A6) : Colors.white70,
-                        size: 22,
+                        size: 25,
                       ),
                       tooltip: 'Görsel & Bilgi Kartları',
                       onPressed: () => setState(() => _showShortcut = !_showShortcut),
                     ),
+                    const SizedBox(width: 4),
 
                     // 6. Hesap Makinesi
                     IconButton(
-                      visualDensity: VisualDensity.compact,
                       icon: Icon(
                         _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
                         color: _showCalculator ? const Color(0xFF14B8A6) : Colors.white70,
-                        size: 22,
+                        size: 25,
                       ),
                       tooltip: 'Hesap Makinesi',
                       onPressed: () => setState(() => _showCalculator = !_showCalculator),
                     ),
+                    const SizedBox(width: 4),
 
                     // 7. PDF Olarak Paylaş
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 22),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 25),
                       tooltip: 'PDF Olarak Paylaş',
                       onPressed: _exportAsPdf,
                     ),
+                    const SizedBox(width: 4),
 
                     // 8. Tam Ekran Yapma (Tüm Barları Gizle)
                     IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.fullscreen_rounded, color: Color(0xFF14B8A6), size: 25),
+                      icon: const Icon(Icons.fullscreen_rounded, color: Color(0xFF14B8A6), size: 28),
                       tooltip: 'Tam Ekran (Barları Gizle)',
                       onPressed: () => setState(() => _showUI = false),
                     ),
@@ -2603,10 +2706,12 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         ),
       ),
     );
-  }
-
   Widget _buildTextBoxOverlay(TextBoxOverlay tb, PageData pageData) {
     final isSelected = _selectedTextBoxId == tb.id;
+    final isMatch = _isSearching &&
+        _searchCtrl.text.trim().isNotEmpty &&
+        _normalizeSearchText(tb.text).contains(_normalizeSearchText(_searchCtrl.text.trim()));
+
     return Positioned(
       left: tb.position.dx,
       top: tb.position.dy,
@@ -2636,11 +2741,18 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               height: tb.size.height,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.4),
-                  width: isSelected ? 2 : 1,
+                  color: isMatch ? const Color(0xFFF59E0B) : (isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.4)),
+                  width: isMatch ? 2.5 : (isSelected ? 2 : 1),
                 ),
                 borderRadius: BorderRadius.circular(AppRadius.small),
-                color: AppColors.surfaceLighter.withOpacity(0.9),
+                color: isMatch ? const Color(0xFFFFE600).withValues(alpha: 0.35) : AppColors.surfaceLighter.withOpacity(0.9),
+                boxShadow: isMatch ? [
+                  BoxShadow(
+                    color: const Color(0xFFFFE600).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  ),
+                ] : null,
               ),
               padding: const EdgeInsets.all(4),
               child: IgnorePointer(
