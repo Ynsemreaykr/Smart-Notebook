@@ -157,10 +157,10 @@ class BookProvider extends ChangeNotifier {
     // 2. Read PDF bytes
     final bytes = await file.readAsBytes();
     
-    // 3. Rasterize PDF pages using Printing.raster (DPI 96 for high quality and fast backup)
+    // 3. Rasterize PDF pages using Printing.raster (DPI 120 for crisp text and good performance)
     int pageIndex = 0;
     try {
-      await for (final page in Printing.raster(bytes, dpi: 96)) {
+      await for (final page in Printing.raster(bytes, dpi: 120)) {
         final pngBytes = await page.toPng();
         final b64 = base64Encode(pngBytes);
         
@@ -199,6 +199,7 @@ class BookProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint("Error rasterizing PDF: $e");
+      rethrow;
     }
     
     loadBooks();

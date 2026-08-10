@@ -36,7 +36,11 @@ class PhotoNoteProvider extends ChangeNotifier {
     if (_selectedCategory == 'Tümü' || _selectedCategory.isEmpty) {
       return _photoNotes;
     }
-    return _photoNotes.where((note) => note.category == _selectedCategory).toList();
+    return _photoNotes.where((note) {
+      final inMain = note.category.trim() == _selectedCategory.trim();
+      final inExtra = note.additionalCategories.contains(_selectedCategory.trim());
+      return inMain || inExtra;
+    }).toList();
   }
 
   /// Get list of all unique categories present in photo notes
@@ -622,9 +626,18 @@ class PhotoNoteProvider extends ChangeNotifier {
     final trimmed = categoryPath.trim();
     if (includeSubCategories) {
       final prefix = '$trimmed / ';
-      return _photoNotes.where((n) => n.category.trim() == trimmed || n.category.trim().startsWith(prefix)).length;
+      return _photoNotes.where((n) {
+        final inMain = n.category.trim() == trimmed || n.category.trim().startsWith(prefix);
+        final inExtra = n.additionalCategories.any(
+            (c) => c.trim() == trimmed || c.trim().startsWith(prefix));
+        return inMain || inExtra;
+      }).length;
     } else {
-      return _photoNotes.where((n) => n.category.trim() == trimmed).length;
+      return _photoNotes.where((n) {
+        final inMain = n.category.trim() == trimmed;
+        final inExtra = n.additionalCategories.contains(trimmed);
+        return inMain || inExtra;
+      }).length;
     }
   }
 
@@ -732,6 +745,129 @@ class PhotoNoteProvider extends ChangeNotifier {
     }
 
     await loadPhotoNotes();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Transfer Metodları: Taşı, Etiketle, Kopyala
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Taşı: Notu eski kategorisinden çıkarıp hedef kategoriye taşır.
+  /// additionalCategories içindeki eski kategori de temizlenir.
+  Future<void> movePhotoNote(String noteId, String targetCategory) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existing = PhotoNote.fromMap(rawData);
+    final newExtras = List<String>.from(existing.additionalCategories)
+      ..remove(targetCategory.trim());
+
+    final updated = existing.copyWith(
+      category: targetCategory.trim(),
+      additionalCategories: newExtras,
+      updatedAt: DateTime.now(),
+    );
+    await box.put(noteId, updated.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Etiketle: Notu mevcut kategorisinde bırakır, hedef kategoriye de bağlar.
+  /// Hedef zaten mevcutsa tekrar eklemez.
+  Future<void> tagPhotoNote(String noteId, String targetCategory) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existing = PhotoNote.fromMap(rawData);
+    final trimTarget = targetCategory.trim();
+
+    // Zaten ana kategori veya ek kategoride varsa ekleme
+    if (existing.category.trim() == trimTarget ||
+        existing.additionalCategories.contains(trimTarget)) {
+      return;
+    }
+
+
+    final newExtras = List<String>.from(existing.additionalCategories)
+      ..add(trimTarget);
+
+    final updated = existing.copyWith(
+      additionalCategories: newExtras,
+      updatedAt: DateTime.now(),
+    );
+    await box.put(noteId, updated.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Etiketi Kaldır: additionalCategories listesinden belirtilen kategoriyi çıkarır.
+  Future<void> untagPhotoNote(String noteId, String targetCategory) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existing = PhotoNote.fromMap(rawData);
+    final newExtras = List<String>.from(existing.additionalCategories)
+      ..remove(targetCategory.trim());
+
+    final updated = existing.copyWith(
+      additionalCategories: newExtras,
+      updatedAt: DateTime.now(),
+    );
+    await box.put(noteId, updated.toMap());
+    await loadPhotoNotes();
+  }
+
+  /// Kopyala: Notun tüm görsel dosyalarını fiziksel olarak kopyalar,
+  /// yeni bağımsız bir PhotoNote olarak hedef kategoriye ekler.
+  Future<PhotoNote?> clonePhotoNote(String noteId, String targetCategory) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(noteId);
+    if (rawData == null || rawData is! Map) return null;
+
+    final existing = PhotoNote.fromMap(rawData);
+    final newId = _uuid.v4();
+    final now = DateTime.now();
+    final directory = await getApplicationDocumentsDirectory();
+
+    // Tüm görsel dosyalarını kopyala
+    final List<String> newPaths = [];
+    for (int i = 0; i < existing.imagePaths.length; i++) {
+      final srcPath = existing.imagePaths[i];
+      try {
+        final srcFile = File(srcPath);
+        if (await srcFile.exists()) {
+          final ext = srcPath.split('.').last;
+          final ts = now.millisecondsSinceEpoch;
+          final destPath = '${directory.path}/photonote_${newId}_clone_${ts}_$i.$ext';
+          final copied = await srcFile.copy(destPath);
+          newPaths.add(copied.path);
+        } else {
+          newPaths.add(srcPath); // kaynak yoksa aynı path'i koru
+        }
+      } catch (e) {
+        debugPrint('Clone image copy error ($i): $e');
+        newPaths.add(srcPath);
+      }
+    }
+
+    final cloned = PhotoNote(
+      id: newId,
+      title: existing.title,
+      imagePath: newPaths.isNotEmpty ? newPaths.first : existing.imagePath,
+      imagePaths: newPaths,
+      imageNotes: List<String>.from(existing.imageNotes),
+      questionFlags: List<bool>.from(existing.questionFlags),
+      category: targetCategory.trim(),
+      additionalCategories: const [],
+      color: existing.color,
+      note: existing.note,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    await box.put(newId, cloned.toMap());
+    await loadPhotoNotes();
+    return cloned;
   }
 
   /// Get list of flashcards for a specific category path (only category-wide flashcards, excluding note-specific ones)

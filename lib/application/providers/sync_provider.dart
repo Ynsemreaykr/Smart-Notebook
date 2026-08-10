@@ -392,16 +392,26 @@ class SyncProvider extends ChangeNotifier {
     return pathToUrl;
   }
 
-  /// Recursively cleans heavy base64 strings (such as canvas thumbnail imageData) from any object or payload
+  /// Recursively cleans heavy base64 strings (such as canvas thumbnail imageData) from any object or payload.
+  /// IMPORTANT: drawingJson and drawing fields are PRESERVED — they contain critical drawing/annotation data.
+  /// Only imageData (canvas PNG thumbnails) and raw base64 image strings are stripped.
   dynamic _cleanBase64Data(dynamic obj) {
     if (obj is Map) {
       final map = <String, dynamic>{};
       obj.forEach((k, v) {
         final keyStr = k.toString();
         if (keyStr == 'imageData') return; // Strip canvas PNG thumbnail
-        if (keyStr == 'backgroundImageBase64') return; // Strip raw base64 background
-        if (v is String && (v.startsWith('data:image') || v.startsWith('iVBORw0KGgo') || v.length > 20000)) {
-          return; // Strip raw base64 data string
+        // backgroundImageBase64 is already uploaded to Drive in _uploadPageBackgroundsToDrive.
+        // Only strip it here — restore will download from Drive URL.
+        if (keyStr == 'backgroundImageBase64') return;
+        // PRESERVE drawingJson and drawing — these contain critical drawing/annotation data (points, lines, etc.)
+        if (keyStr == 'drawingJson' || keyStr == 'drawing') {
+          map[keyStr] = v;
+          return;
+        }
+        // Strip only actual base64 image data strings (not drawingJson or other structured data)
+        if (v is String && (v.startsWith('data:image') || v.startsWith('iVBORw0KGgo'))) {
+          return; // Strip raw base64 image data string
         }
         map[keyStr] = _cleanBase64Data(v);
       });
@@ -428,14 +438,63 @@ class SyncProvider extends ChangeNotifier {
     return obj;
   }
 
+  /// Computes a simple hash of a page's background image for incremental backup.
+  /// Returns a short hash string that can be compared to detect changes.
+  String _computePageBgHash(String? backgroundImageBase64) {
+    if (backgroundImageBase64 == null || backgroundImageBase64.isEmpty) return '';
+    // Use first 100 + last 100 chars + length as a fast fingerprint
+    final len = backgroundImageBase64.length;
+    final prefix = backgroundImageBase64.substring(0, len < 100 ? len : 100);
+    final suffix = len > 100 ? backgroundImageBase64.substring(len - 100) : '';
+    return '${prefix.hashCode}_${suffix.hashCode}_$len';
+  }
+
   /// Uploads page backgroundImageBase64 fields to Google Drive.
   /// Returns a list of pages with backgroundImageBase64 replaced by backgroundImageUrl (drive://<fileId>) and imageData stripped.
+  /// Supports incremental backup: pages whose background hasn't changed since last backup are skipped.
   Future<List<dynamic>> _uploadPageBackgroundsToDrive(
       User user, List<dynamic> pages) async {
     final List<dynamic> result = [];
+    int uploaded = 0;
+    int skipped = 0;
+
+    // Load previously backed-up page hashes for incremental backup
+    final settingsBox = Hive.box('settings');
+    final Map<String, String> previousHashes = {};
+    final Map<String, String> previousDriveUrls = {};
+    try {
+      final savedHashes = settingsBox.get('page_bg_hashes');
+      if (savedHashes is Map) {
+        savedHashes.forEach((k, v) => previousHashes[k.toString()] = v.toString());
+      }
+      final savedUrls = settingsBox.get('page_bg_drive_urls');
+      if (savedUrls is Map) {
+        savedUrls.forEach((k, v) => previousDriveUrls[k.toString()] = v.toString());
+      }
+    } catch (_) {}
+    final Map<String, String> newHashes = {};
+    final Map<String, String> newDriveUrls = {};
+
+    // ── Önce DriveApi & folderId başlat — loop dışında ──
     drive.DriveApi? driveApi;
     String? folderId;
-    int uploaded = 0;
+    try {
+      driveApi = await _getDriveApi();
+      if (driveApi != null) {
+        folderId = await _driveService.getOrCreateFolderId(driveApi);
+        if (folderId != null) {
+          _driveFolderId = folderId;
+          final settingsBox = Hive.box('settings');
+          await settingsBox.put('drive_folder_id', _driveFolderId);
+        }
+        debugPrint('[BACKUP] Page bg Drive init: folderId=$folderId');
+      } else {
+        debugPrint('[BACKUP WARNING] DriveApi could not be obtained for page backgrounds. '
+            'backgroundImageBase64 fields will be KEPT in JSON (no stripping).');
+      }
+    } catch (initErr) {
+      debugPrint('[BACKUP WARNING] Drive init error for page backgrounds: $initErr');
+    }
 
     for (final rawP in pages) {
       Map<String, dynamic> p;
@@ -479,22 +538,29 @@ class SyncProvider extends ChangeNotifier {
             final b64 = ipMap['backgroundImageBase64'];
             if (b64 == null || b64 is! String || b64.isEmpty) return ipMap;
 
-            if (driveApi != null && folderId == null) {
-              folderId = await _driveService.getOrCreateFolderId(driveApi!);
-              if (folderId != null) {
-                _driveFolderId = folderId;
-                final settingsBox = Hive.box('settings');
-                await settingsBox.put('drive_folder_id', _driveFolderId);
-              }
-            }
-
-            if (driveApi == null) {
-              ipMap.remove('backgroundImageBase64');
-              return ipMap;
+            // Drive kullanılamiyorsa base64'u çıkarma — içeriği koruyalım
+            if (driveApi == null || folderId == null) {
+              debugPrint('[BACKUP] No Drive/folderId — keeping backgroundImageBase64 in JSON.');
+              return ipMap; // ← base64'u SİLME, oldugu gibi bırak
             }
 
             final pageId = p['id']?.toString() ?? 'page_${uploaded}';
             final filename = 'bg_${pageId}.png';
+
+            // Incremental backup: check if this page's background has changed
+            final currentHash = _computePageBgHash(b64);
+            final previousHash = previousHashes[pageId];
+            final previousUrl = previousDriveUrls[pageId];
+            if (currentHash == previousHash && previousUrl != null && previousUrl.isNotEmpty) {
+              // Background hasn't changed — reuse previous Drive URL
+              skipped++;
+              debugPrint('[BACKUP SKIP] Page $pageId bg unchanged, reusing Drive URL: $previousUrl');
+              ipMap.remove('backgroundImageBase64');
+              ipMap['backgroundImageUrl'] = previousUrl;
+              newHashes[pageId] = currentHash;
+              newDriveUrls[pageId] = previousUrl;
+              return ipMap;
+            }
 
             String? driveId;
             try {
@@ -506,26 +572,30 @@ class SyncProvider extends ChangeNotifier {
                 folderId: folderId,
               );
               uploaded++;
-              _imageProgress = 'Sayfa görseli $uploaded Drive\'a yükleniyor...';
+              _imageProgress = 'Sayfa görseli $uploaded Drive\'a yükleniyor... ($skipped atlandı)';
               notifyListeners();
             } catch (uploadErr) {
               debugPrint('Page bg Drive upload error: $uploadErr');
-              ipMap.remove('backgroundImageBase64');
+              // Yükleme başarısız olursa da base64'u koruyalım (silme)
               return ipMap;
             }
 
+            // Yükleme başarılı: base64 yerine driveUrl yaz
             ipMap.remove('backgroundImageBase64');
             if (driveId != null) {
               ipMap['backgroundImageUrl'] = 'drive://$driveId';
+              newHashes[pageId] = currentHash;
+              newDriveUrls[pageId] = 'drive://$driveId';
             }
             return ipMap;
           }));
           decoded['pages'] = updatedInnerPages;
         }
 
-        final cleanedDecoded = _cleanBase64Data(decoded);
+        // Sadece Drive'a yüklenen (backgroundImageUrl olan) sayfalar için base64 temizle
+        // Yüklenemeyen sayfalar base64 ile korunuyor — burada ekstra temizleme YAPMA
         final updatedPage = Map<String, dynamic>.from(p);
-        updatedPage['drawingJson'] = jsonEncode(cleanedDecoded);
+        updatedPage['drawingJson'] = jsonEncode(decoded);
         result.add(updatedPage);
       } catch (e) {
         debugPrint('Page background processing error: $e');
@@ -533,6 +603,15 @@ class SyncProvider extends ChangeNotifier {
       }
     }
 
+    // Save page hashes and Drive URLs for next incremental backup
+    try {
+      await settingsBox.put('page_bg_hashes', newHashes);
+      await settingsBox.put('page_bg_drive_urls', newDriveUrls);
+    } catch (e) {
+      debugPrint('[BACKUP WARNING] Could not save page hashes: $e');
+    }
+
+    debugPrint('[BACKUP] Page backgrounds: $uploaded uploaded, $skipped skipped (unchanged).');
     _imageProgress = '';
     notifyListeners();
     return result;
@@ -966,6 +1045,16 @@ class SyncProvider extends ChangeNotifier {
       final pagesBox = DatabaseService.getPagesBox();
       await pagesBox.clear();
       final pagesData = data['pages'] as List<dynamic>? ?? [];
+
+      // Drive API'yi bir kez başlat — her sayfa için tekrar açmak yerine
+      drive.DriveApi? restoreDriveApi;
+      try {
+        restoreDriveApi = await _getDriveApi();
+        debugPrint('[RESTORE] DriveApi init for page backgrounds: ${restoreDriveApi != null ? "OK" : "FAILED"}');
+      } catch (e) {
+        debugPrint('[RESTORE WARNING] DriveApi init error: $e');
+      }
+
       for (final p in pagesData) {
         if (p is Map) {
           final pageMap = Map<String, dynamic>.from(p);
@@ -976,21 +1065,23 @@ class SyncProvider extends ChangeNotifier {
               if (dj is Map && dj.containsKey('pages')) {
                 final innerPages = dj['pages'] as List<dynamic>;
                 bool changed = false;
-                drive.DriveApi? driveApi;
                 final restored = await Future.wait(innerPages.map((ip) async {
                   if (ip is! Map) return ip;
                   final ipMap = Map<String, dynamic>.from(ip);
                   final url = ipMap['backgroundImageUrl'];
+
+                  // Zaten base64 varsa dokunma
+                  if (ipMap.containsKey('backgroundImageBase64')) return ipMap;
+
                   if (url == null || url is! String || url.isEmpty) return ipMap;
                   try {
                     final tmpDir = await getApplicationDocumentsDirectory();
                     if (url.startsWith('drive://')) {
                       final driveId = url.replaceAll('drive://', '');
                       final tmpFile = File('${tmpDir.path}/tmp_bg_drive_$driveId.png');
-                      driveApi ??= await _getDriveApi();
-                      if (driveApi != null) {
+                      if (restoreDriveApi != null) {
                         final ok = await _driveService.downloadFile(
-                          driveApi: driveApi!,
+                          driveApi: restoreDriveApi!,
                           driveFileId: driveId,
                           targetLocalFile: tmpFile,
                         );
@@ -999,7 +1090,12 @@ class SyncProvider extends ChangeNotifier {
                           ipMap['backgroundImageBase64'] = base64Encode(bytes);
                           ipMap.remove('backgroundImageUrl');
                           changed = true;
+                          debugPrint('[RESTORE] Page bg restored from Drive: $driveId');
+                        } else {
+                          debugPrint('[RESTORE WARNING] Page bg download failed/missing: $driveId');
                         }
+                      } else {
+                        debugPrint('[RESTORE WARNING] No DriveApi for page bg: $driveId');
                       }
                     } else if (url.startsWith('http')) {
                       final ref = FirebaseStorage.instance.refFromURL(url);
@@ -1007,24 +1103,27 @@ class SyncProvider extends ChangeNotifier {
                       if (!await tmpFile.exists()) {
                         await ref.writeToFile(tmpFile);
                       }
-                      final bytes = await tmpFile.readAsBytes();
-                      ipMap['backgroundImageBase64'] = base64Encode(bytes);
-                      ipMap.remove('backgroundImageUrl');
-                      changed = true;
+                      if (await tmpFile.exists()) {
+                        final bytes = await tmpFile.readAsBytes();
+                        ipMap['backgroundImageBase64'] = base64Encode(bytes);
+                        ipMap.remove('backgroundImageUrl');
+                        changed = true;
+                      }
                     }
                   } catch (e) {
                     debugPrint('Page bg restore error: $e');
                   }
                   return ipMap;
                 }));
-                if (changed) {
-                  final djMap = Map<String, dynamic>.from(dj);
-                  djMap['pages'] = restored;
-                  pageMap['drawingJson'] = jsonEncode(djMap);
-                }
+
+                // changed olsun olmasın, drawingJson'u daima güncelle
+                final djMap = Map<String, dynamic>.from(dj);
+                djMap['pages'] = restored;
+                pageMap['drawingJson'] = jsonEncode(djMap);
               }
             } catch (e) {
               debugPrint('drawingJson parse error during restore: $e');
+
             }
           }
           final page = NotePage.fromJson(pageMap);

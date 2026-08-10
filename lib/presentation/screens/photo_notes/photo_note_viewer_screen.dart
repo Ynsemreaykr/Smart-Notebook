@@ -51,6 +51,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final Map<String, TextEditingController> _sectionControllers = {};
   final Map<int, String> _customAccordionTitles = {};
   String? _activeFocusedSecKey;
+  double _noteOverlayHeight = 150.0; // Draggable height of bottom note overlay
 
   void _editAccordionTitle(int index) {
     final currentTitle = _customAccordionTitles[index] ?? 'Bilgi Kartları';
@@ -1947,7 +1948,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 ),
               ),
 
-              // Bottom Semi-Transparent Scrollable Note Overlay Panel
+              // Bottom Semi-Transparent Scrollable Note Overlay Panel (Görsele Ait Not Penceresi)
               if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty)
                 Positioned(
                   bottom: 0,
@@ -1961,37 +1962,87 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                       child: SafeArea(
                         top: false,
                         child: Container(
-                          constraints: const BoxConstraints(maxHeight: 140),
-                          margin: const EdgeInsets.all(16),
-                          padding: const EdgeInsets.all(12),
+                          height: _noteOverlayHeight.clamp(80.0, MediaQuery.of(context).size.height * 0.75),
+                          margin: const EdgeInsets.fromLTRB(14, 0, 14, 14),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.85),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6), width: 1.2),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.7), width: 1.3),
                             boxShadow: const [
-                              BoxShadow(color: Colors.black54, blurRadius: 12, offset: Offset(0, 4)),
+                              BoxShadow(color: Colors.black87, blurRadius: 12, offset: Offset(0, 4)),
                             ],
                           ),
-                          child: Scrollbar(
-                            thumbVisibility: true,
-                            thickness: 3,
-                            radius: const Radius.circular(3),
-                            child: SingleChildScrollView(
-                              physics: const BouncingScrollPhysics(),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
-                                    if (sIndex > 0) const SizedBox(height: 6),
-                                    Text(
-                                      overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
-                                      style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Top Drag Handle (Görsel ile metin kutusunun birleştiği çizgi - yukarı/aşağı sürükleyerek boyutlandırma)
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragUpdate: (details) {
+                                  setState(() {
+                                    _noteOverlayHeight = (_noteOverlayHeight - details.delta.dy)
+                                        .clamp(80.0, MediaQuery.of(context).size.height * 0.75);
+                                  });
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                                    border: const Border(bottom: BorderSide(color: Colors.white10, width: 0.8)),
+                                  ),
+                                  child: Center(
+                                    child: Container(
+                                      width: 44,
+                                      height: 4.5,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF14B8A6),
+                                        borderRadius: BorderRadius.circular(2.5),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFF14B8A6).withValues(alpha: 0.5),
+                                            blurRadius: 4,
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ],
-                                ],
+                                  ),
+                                ),
                               ),
-                            ),
+
+                              // Scrollable Note Content (Tıklandığında tam düzenleyiciyi açar)
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+                                    child: Scrollbar(
+                                      thumbVisibility: true,
+                                      thickness: 3.5,
+                                      radius: const Radius.circular(3),
+                                      child: SingleChildScrollView(
+                                        physics: const BouncingScrollPhysics(),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                              if (sIndex > 0) const SizedBox(height: 6),
+                                              Text(
+                                                overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
+                                                style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

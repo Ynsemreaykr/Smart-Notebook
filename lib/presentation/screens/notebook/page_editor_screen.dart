@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_drawing_board/flutter_drawing_board.dart';
 import 'package:flutter_drawing_board/paint_contents.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../../../application/providers/page_provider.dart';
 import '../../../application/providers/book_provider.dart';
 import '../../../application/providers/pdf_provider.dart';
@@ -17,12 +19,8 @@ import '../../../application/providers/photo_note_provider.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../domain/models/overlay_models.dart';
 import '../../../core/constants/app_radius.dart';
-import '../../../core/constants/app_spacing.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../widgets/common/app_card.dart';
-import '../../../widgets/common/app_container.dart';
 import '../../../widgets/common/app_text.dart';
-import '../../widgets/bounce_button.dart';
 import '../../widgets/floating_calculator.dart';
 import '../../widgets/floating_book_shortcut.dart';
 
@@ -41,6 +39,8 @@ class PageData {
   List<TextBoxOverlay> textBoxOverlays;
   /// PDF'ten veya görselden içe aktarılan arka plan resmi (base64)
   String? backgroundImageBase64;
+  /// Kağıt tipi: 'blank' (düz), 'lined' (çizgili), 'grid' (kareli)
+  String paperType;
 
   PageData({
     this.text = '', 
@@ -51,6 +51,7 @@ class PageData {
     List<ImageOverlay>? imageOverlays,
     List<TextBoxOverlay>? textBoxOverlays,
     this.backgroundImageBase64,
+    this.paperType = 'blank',
   }) : controller = controller ?? DrawingController(),
        imageOverlays = imageOverlays ?? [],
        textBoxOverlays = textBoxOverlays ?? [] {
@@ -67,6 +68,7 @@ class PageData {
       'isItalic': isItalic,
       'imageOverlays': imageOverlays.map((e) => e.toJson()).toList(),
       'textBoxOverlays': textBoxOverlays.map((e) => e.toJson()).toList(),
+      'paperType': paperType,
       if (backgroundImageBase64 != null) 'backgroundImageBase64': backgroundImageBase64,
     };
   }
@@ -82,6 +84,7 @@ class PageData {
       imageOverlays: imgList,
       textBoxOverlays: txtList,
       backgroundImageBase64: json['backgroundImageBase64'] as String?,
+      paperType: json['paperType'] as String? ?? 'blank',
     );
     try {
       if (json['drawing'] != null) {
@@ -97,6 +100,87 @@ class PageData {
 
   void dispose() {
     textController.dispose();
+  }
+}
+
+/// Vektörel Kağıt Deseni Çizicisi: Düz, Çizgili ve Kareli Kağıt
+class PaperBackgroundPainter extends CustomPainter {
+  final String paperType;
+  final bool isDark;
+
+  PaperBackgroundPainter({
+    required this.paperType,
+    this.isDark = false,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bgPaint = Paint()..color = isDark ? const Color(0xFF0F172A) : const Color(0xFFFAFAFA);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+
+    if (paperType == 'lined') {
+      final linePaint = Paint()
+        ..color = isDark 
+            ? const Color(0xFF334155).withValues(alpha: 0.7) 
+            : const Color(0xFF94A3B8).withValues(alpha: 0.45)
+        ..strokeWidth = 1.0;
+
+      final marginPaint = Paint()
+        ..color = const Color(0xFFEF4444).withValues(alpha: isDark ? 0.35 : 0.4)
+        ..strokeWidth = 1.2;
+
+      const double topMargin = 72.0;
+      const double bottomMargin = 40.0;
+      const double lineSpacing = 32.0;
+      const double leftMargin = 50.0;
+
+      // Sol dikey kırmızı kenar çizgisi (defter marjini)
+      canvas.drawLine(
+        const Offset(leftMargin, 0),
+        Offset(leftMargin, size.height),
+        marginPaint,
+      );
+
+      // Yatay çizgiler
+      for (double y = topMargin; y <= size.height - bottomMargin; y += lineSpacing) {
+        canvas.drawLine(
+          Offset(0, y),
+          Offset(size.width, y),
+          linePaint,
+        );
+      }
+    } else if (paperType == 'grid') {
+      final gridPaint = Paint()
+        ..color = isDark 
+            ? const Color(0xFF334155).withValues(alpha: 0.6) 
+            : const Color(0xFF94A3B8).withValues(alpha: 0.35)
+        ..strokeWidth = 0.8;
+
+      const double gridSize = 24.0;
+
+      // Dikey grid çizgileri
+      for (double x = 0; x <= size.width; x += gridSize) {
+        canvas.drawLine(
+          Offset(x, 0),
+          Offset(x, size.height),
+          gridPaint,
+        );
+      }
+
+      // Yatay grid çizgileri
+      for (double y = 0; y <= size.height; y += gridSize) {
+        canvas.drawLine(
+          Offset(0, y),
+          Offset(size.width, y),
+          gridPaint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant PaperBackgroundPainter oldDelegate) {
+    return oldDelegate.paperType != paperType || oldDelegate.isDark != isDark;
   }
 }
 
@@ -139,16 +223,53 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   bool _showUI = true;
   int _pointerCount = 0;
 
+  // Toolbar
+  bool _toolbarVisible = true;
+  bool _toolbarPinned = true; // User can pin toolbar to always show
   
   Color _currentColor = Colors.black;
-  double _currentStrokeWidth = 3.0;
+
+  // Per-tool stroke widths — each tool remembers its own size independently
+  double _penStrokeWidth = 3.0;
+  double _eraserStrokeWidth = 8.0;
+  double _highlighterStrokeWidth = 14.0;
+
+  /// Returns the active tool's own stroke width
+  double get _currentStrokeWidth {
+    if (_activeTool == 'Eraser') return _eraserStrokeWidth;
+    if (_activeTool == 'Highlighter') return _highlighterStrokeWidth;
+    return _penStrokeWidth;
+  }
+
+  /// Sets the active tool's own stroke width
+  set _currentStrokeWidth(double value) {
+    if (_activeTool == 'Eraser') {
+      _eraserStrokeWidth = value;
+    } else if (_activeTool == 'Highlighter') {
+      _highlighterStrokeWidth = value;
+    } else {
+      _penStrokeWidth = value;
+    }
+  }
 
   String _activeTool = 'SmoothLine';
+  String? _previousToolBeforeStylus;
   int _activePageIndex = 0;
   String? _selectedTextBoxId;
   String? _selectedImageId;
   final ImagePicker _imagePicker = ImagePicker();
   
+  // Eraser cursor tracking
+  Offset? _eraserCursorPosition;
+  
+  // Area eraser selection
+  Offset? _areaEraserStart;
+  Offset? _areaEraserEnd;
+
+  // Floating Draggable Drawing Bar
+  Offset _floatingBarOffset = const Offset(14, 180);
+  bool _isFloatingBarExpanded = false;
+
   late PageController _pageController;
   final TransformationController _transformationController = TransformationController();
   TapDownDetails? _doubleTapDetails;
@@ -157,6 +278,15 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   final GlobalKey _cropBoundaryKey = GlobalKey();
   Offset? _cropStartPoint;
   Offset? _cropEndPoint;
+
+  // In-book search state (Ctrl+F with OCR)
+  bool _isSearching = false;
+  bool _isOcrScanning = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  List<int> _searchMatchedPageIndices = [];
+  int _currentSearchResultIndex = 0;
+  final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  final Map<int, String> _pageOcrTextCache = {};
   
   /// When bookId is set, maps each _pages[i] to the corresponding NotePage.id
   /// so we can save each page's drawingJson back to its own NotePage record.
@@ -167,12 +297,26 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     super.initState();
     _titleCtrl = TextEditingController();
     _pageController = PageController(initialPage: 0);
+    _transformationController.addListener(_onTransformationChanged);
+  }
+
+  void _onTransformationChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    final zoomed = scale > 1.05;
+    if (zoomed != _isZoomed) {
+      setState(() {
+        _isZoomed = zoomed;
+      });
+    }
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
+    _searchCtrl.dispose();
+    _textRecognizer.close();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -363,12 +507,374 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     }
   }
 
+  Future<bool> _onBackPressed() async {
+    if (!_hasChanges) {
+      return true;
+    }
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E3A5F),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+        contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 20, 20),
+        title: const Text(
+          'Kaydedilsin mi?',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
+        ),
+        content: const Text(
+          'Son yaptığınız değişiklikler kaydedilsin mi?',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            height: 1.35,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'discard'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text(
+              'Hayır',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7DD3FC),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            onPressed: () => Navigator.pop(ctx, 'save'),
+            child: const Text(
+              'Evet',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (result == 'save') {
+      await _save();
+      return true;
+    } else if (result == 'discard') {
+      return true;
+    }
+    return false;
+  }
+
   void _addPage() {
+    _showAddPageOptionsSheet();
+  }
+
+  void _showAddPageOptionsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFF14B8A6), width: 1.2),
+            boxShadow: const [
+              BoxShadow(color: Colors.black87, blurRadius: 20, spreadRadius: 2),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Yeni Sayfa Ekle',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildPageTemplateOption(
+                      icon: Icons.note_outlined,
+                      label: 'Boş Sayfa',
+                      sublabel: 'Düz Beyaz',
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addNewPageWithTemplate(paperType: 'blank');
+                      },
+                    ),
+                    _buildPageTemplateOption(
+                      icon: Icons.format_align_left_rounded,
+                      label: 'Çizgili',
+                      sublabel: 'Satırlı Defter',
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addNewPageWithTemplate(paperType: 'lined');
+                      },
+                    ),
+                    _buildPageTemplateOption(
+                      icon: Icons.grid_on_rounded,
+                      label: 'Kareli',
+                      sublabel: 'Matematik',
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _addNewPageWithTemplate(paperType: 'grid');
+                      },
+                    ),
+                    _buildPageTemplateOption(
+                      icon: Icons.add_photo_alternate_rounded,
+                      label: 'Görsel / Belge',
+                      sublabel: 'Galeriden',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _addNewPageFromGallery();
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Change the paper type of the currently-active page
+  void _showChangePaperTypeSheet() {
+    if (_pages.isEmpty) return;
+    final currentType = _pages[_activePageIndex].paperType;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          margin: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFF14B8A6), width: 1.2),
+            boxShadow: const [
+              BoxShadow(color: Colors.black87, blurRadius: 20, spreadRadius: 2),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Kağıt Tipini Değiştir',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Sayfa ${_activePageIndex + 1} — şu anki tip: ${currentType == 'lined' ? 'Çizgili' : currentType == 'grid' ? 'Kareli' : 'Boş'}',
+                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildPageTemplateOption(
+                      icon: Icons.note_outlined,
+                      label: 'Boş',
+                      sublabel: 'Düz Beyaz',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _changePaperType('blank');
+                      },
+                    ),
+                    _buildPageTemplateOption(
+                      icon: Icons.format_align_left_rounded,
+                      label: 'Çizgili',
+                      sublabel: 'Satırlı Defter',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _changePaperType('lined');
+                      },
+                    ),
+                    _buildPageTemplateOption(
+                      icon: Icons.grid_on_rounded,
+                      label: 'Kareli',
+                      sublabel: 'Matematik',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _changePaperType('grid');
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _changePaperType(String newType) {
+    if (_pages.isEmpty) return;
     setState(() {
-      _pages.add(PageData());
-      _activePageIndex = _pages.length - 1;
+      _pages[_activePageIndex].paperType = newType;
       _hasChanges = true;
     });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Sayfa ${_activePageIndex + 1} kağıt tipi ${newType == 'lined' ? 'Çizgili' : newType == 'grid' ? 'Kareli' : 'Boş'} olarak değiştirildi.',
+        ),
+        duration: const Duration(seconds: 2),
+        backgroundColor: const Color(0xFF14B8A6),
+      ),
+    );
+  }
+
+  Widget _buildPageTemplateOption({
+    required IconData icon,
+    required String label,
+    required String sublabel,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 76,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.4)),
+              ),
+              child: Icon(icon, color: const Color(0xFF14B8A6), size: 22),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sublabel,
+              style: const TextStyle(color: Colors.white54, fontSize: 9),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addNewPageWithTemplate({required String paperType}) async {
+    // In multi-page / book mode, create a real NotePage in Hive immediately
+    // so the page is persisted and synced on next backup.
+    if (widget.bookId != null) {
+      final pageProvider = context.read<PageProvider>();
+      // First save current state so existing pages are up-to-date
+      await _save();
+      // Create the new NotePage record with the chosen paperType
+      final newPageJson = jsonEncode({
+        'pages': [
+          {
+            'text': '',
+            'drawing': [],
+            'fontSize': 16.0,
+            'isBold': false,
+            'isItalic': false,
+            'imageOverlays': [],
+            'textBoxOverlays': [],
+            'paperType': paperType,
+          }
+        ]
+      });
+      final newNotePage = await pageProvider.addPage(
+        widget.bookId!,
+        'Sayfa ${_pages.length + 1}',
+        content: '',
+        isAdvanced: true,
+      );
+      // Persist the paperType inside drawingJson immediately
+      await pageProvider.updatePage(
+        newNotePage.id,
+        drawingJson: newPageJson,
+        isAdvanced: true,
+      );
+      setState(() {
+        _pages.add(PageData(paperType: paperType));
+        _notePageIds.add(newNotePage.id);
+        _activePageIndex = _pages.length - 1;
+        _hasChanges = false; // just saved
+      });
+    } else {
+      // Single-page mode: just append locally; _save() will persist all pages
+      setState(() {
+        _pages.add(PageData(paperType: paperType));
+        _activePageIndex = _pages.length - 1;
+        _hasChanges = true;
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_pageController.hasClients) {
         _pageController.animateToPage(
@@ -378,9 +884,54 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         );
       }
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Yeni sayfa eklendi!'), duration: Duration(seconds: 1)),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Yeni ${paperType == "lined" ? "çizgili" : paperType == "grid" ? "kareli" : "boş"} sayfa eklendi!'), 
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  }
+
+
+  Future<void> _addNewPageFromGallery() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final bytes = await File(image.path).readAsBytes();
+      final base64Str = base64Encode(bytes);
+
+      setState(() {
+        _pages.add(PageData(
+          backgroundImageBase64: base64Str,
+          paperType: 'blank',
+        ));
+        _activePageIndex = _pages.length - 1;
+        _hasChanges = true;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) {
+          _pageController.animateToPage(
+            _activePageIndex,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Galeriden yeni sayfa eklendi!'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error adding page from gallery: $e');
+    }
   }
 
   Future<void> _pickImage() async {
@@ -415,48 +966,12 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   Widget build(BuildContext context) {
     context.watch<ThemeProvider>();
     return PopScope(
-      canPop: !_hasChanges,
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        
-        if (_hasChanges) {
-          final shouldSave = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const AppText(
-                'Kaydedilsin mi?',
-                styleType: AppTextStyleType.headingMedium,
-                styleOverride: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              content: const AppText('Son yaptığınız değişiklikler kaydedilsin mi?', styleType: AppTextStyleType.bodyMedium),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: AppText('Hayır', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadius.medium),
-                    ),
-                  ),
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: AppText('Evet', styleType: AppTextStyleType.label, color: Colors.white),
-                ),
-              ],
-            ),
-          );
-
-          if (shouldSave != null) {
-            if (shouldSave) {
-              await _save();
-            }
-            if (mounted) {
-              Navigator.of(context).pop();
-            }
-          }
+        final shouldPop = await _onBackPressed();
+        if (shouldPop && mounted) {
+          Navigator.of(context).pop();
         }
       },
       child: Scaffold(
@@ -469,6 +984,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               controller: _pageController,
               scrollDirection: Axis.horizontal,
               allowImplicitScrolling: true,
+              clipBehavior: Clip.hardEdge,
               itemCount: _pages.length,
               physics: (_currentMode == EditorMode.drawing || _currentMode == EditorMode.questionCrop || _isZoomed) 
                   ? const NeverScrollableScrollPhysics() 
@@ -477,6 +993,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 setState(() {
                   _activePageIndex = index;
                   _isZoomed = false;
+                  _transformationController.value = Matrix4.identity();
                   if (_currentMode == EditorMode.drawing) {
                      _applyDrawingToolToActivePage();
                   }
@@ -487,7 +1004,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               },
             ),
 
-            // Layer 1: Floating Transparent Top Bar & Toolbars
+            // Layer 1: Slim Top AppBar
             Positioned(
               top: 0,
               left: 0,
@@ -497,12 +1014,14 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 opacity: _showUI ? 1.0 : 0.0,
                 child: IgnorePointer(
                   ignoring: !_showUI,
-                  child: _buildTopInterface(),
+                  child: _buildTopAppBar(),
                 ),
               ),
             ),
 
-            // Layer 2: Floating Transparent Bottom Bar
+
+
+            // Layer 3: Floating Transparent Bottom Bar (Integrated Tools + Compact Navigation)
             Positioned(
               bottom: 0,
               left: 0,
@@ -516,6 +1035,30 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 ),
               ),
             ),
+
+            // Layer 4: Floating Draggable Mini Bubble & Vertical Toolbar (Kalem / Silgi Baloncuğu)
+            if (_showUI)
+              _buildFloatingDrawingBar(),
+
+            // Fullscreen Restore Floating Button (When _showUI is false - Icon Only)
+            if (!_showUI)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                right: 12,
+                child: GestureDetector(
+                  onTap: () => setState(() => _showUI = true),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.6)),
+                      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)],
+                    ),
+                    child: const Icon(Icons.fullscreen_exit_rounded, color: Color(0xFF14B8A6), size: 20),
+                  ),
+                ),
+              ),
 
             if (_showCalculator)
               FloatingCalculator(
@@ -536,7 +1079,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   void _handleDoubleTap() {
     if (_currentMode != EditorMode.pan) return;
     
-    if (_transformationController.value != Matrix4.identity()) {
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    if (currentScale > 1.05) {
       _transformationController.value = Matrix4.identity();
     } else {
       final position = _doubleTapDetails?.localPosition ?? Offset.zero;
@@ -544,7 +1088,6 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         ..translate(-position.dx * 1.5, -position.dy * 1.5)
         ..scale(2.5);
     }
-    setState(() {});
   }
 
   Widget _buildPageFrame(int index) {
@@ -581,7 +1124,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         transformationController: _transformationController,
         minScale: 0.8,
         maxScale: 5.0,
-        clipBehavior: Clip.none,
+        clipBehavior: Clip.hardEdge,
         panEnabled: isPanMode,
         scaleEnabled: isPanMode,
         onInteractionUpdate: (details) {
@@ -617,54 +1160,66 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 child: Container(
                   width: double.infinity,
                   height: double.infinity,
-                  color: Colors.black,
+                  color: Colors.white,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      // 1. Arka Plan: PDF/Görsel tam ekran (BoxFit.contain)
+                      // 1. Arka Plan: PDF/Görsel tam ekran (BoxFit.contain) veya Vektörel Kağıt Deseni (Düz, Çizgili, Kareli)
                       if (hasBg)
                         Positioned.fill(
-                          child: Center(
-                            child: Image.memory(
-                              base64Decode(pageData.backgroundImageBase64!),
-                              fit: BoxFit.contain,
-                              gaplessPlayback: true,
+                          child: Container(
+                            color: Colors.white,
+                            child: Center(
+                              child: Image.memory(
+                                base64Decode(pageData.backgroundImageBase64!),
+                                fit: BoxFit.contain,
+                                gaplessPlayback: true,
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: PaperBackgroundPainter(
+                              paperType: pageData.paperType,
+                              isDark: false,
                             ),
                           ),
                         ),
 
-              // 2. Text Editor — arka plan yoksa göster
-              if (!hasBg)
-                Container(
-                  color: const Color(0xFF0F172A),
-                  padding: const EdgeInsets.fromLTRB(20, 100, 20, 100),
-                  child: IgnorePointer(
-                    ignoring: !isTextMode,
-                    child: TextField(
-                      controller: pageData.textController,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Metin girmek için dokunun...',
-                        hintStyle: TextStyle(color: Colors.white38),
-                        filled: false,
-                      ),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: pageData.fontSize,
-                        fontWeight: pageData.isBold ? FontWeight.bold : FontWeight.normal,
-                        fontStyle: pageData.isItalic ? FontStyle.italic : FontStyle.normal,
-                        height: 1.5,
-                      ),
-                      onChanged: (val) {
-                        pageData.text = val;
-                        if (!_hasChanges) setState(() => _hasChanges = true);
-                      },
-                    ),
-                  ),
-                ),
+                      // 2. Text Editor — arka plan yoksa göster
+                      if (!hasBg)
+                        Container(
+                          color: Colors.transparent,
+                          padding: const EdgeInsets.fromLTRB(55, 75, 20, 40),
+                          child: IgnorePointer(
+                            ignoring: !isTextMode,
+                            child: TextField(
+                              controller: pageData.textController,
+                              maxLines: null,
+                              expands: true,
+                              textAlignVertical: TextAlignVertical.top,
+                              decoration: InputDecoration(
+                                border: InputBorder.none,
+                                hintText: isTextMode ? 'Metin girmek için dokunun...' : '',
+                                hintStyle: const TextStyle(color: Colors.black26),
+                                filled: false,
+                              ),
+                              style: TextStyle(
+                                color: const Color(0xFF0F172A),
+                                fontSize: pageData.fontSize,
+                                fontWeight: pageData.isBold ? FontWeight.bold : FontWeight.normal,
+                                fontStyle: pageData.isItalic ? FontStyle.italic : FontStyle.normal,
+                                height: pageData.paperType == 'lined' ? (32.0 / pageData.fontSize) : 1.5,
+                              ),
+                              onChanged: (val) {
+                                pageData.text = val;
+                                if (!_hasChanges) setState(() => _hasChanges = true);
+                              },
+                            ),
+                          ),
+                        ),
               
               // 3. Image Overlays
               ...pageData.imageOverlays.map((img) => _buildImageOverlay(img, pageData)),
@@ -672,68 +1227,372 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               // 4. TextBox Overlays
               ...pageData.textBoxOverlays.map((tb) => _buildTextBoxOverlay(tb, pageData)),
 
-              // 5. Drawing Board
-              IgnorePointer(
-                ignoring: !isDrawingMode,
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return DrawingBoard(
-                      controller: pageData.controller,
-                      background: Container(
-                        width: constraints.maxWidth,
-                        height: constraints.maxHeight,
-                        color: Colors.transparent,
-                      ),
-                      boardConstrained: true,
-                      onPointerDown: (_) {
-                        if (!_hasChanges) setState(() => _hasChanges = true);
-                      },
-                      onPointerUp: (_) {
-                        if (_activeTool == 'AreaEraser') {
-                          final contents = pageData.controller.getJsonList();
-                          if (contents.isNotEmpty) {
-                            final lastItem = contents.last;
-                            if (lastItem['type'] == 'Rectangle') {
-                              final sp = lastItem['startPoint'];
-                              final ep = lastItem['endPoint'];
-                              if (sp != null && ep != null) {
-                                List<Map<String, dynamic>> updatedContents = List.from(contents);
-                                updatedContents.removeLast();
-                                
-                                Map<String, dynamic> eraserRect = Map.from(lastItem);
-                                eraserRect['paint'] = {
-                                  "blendMode": 0,
-                                  "color": 0,
-                                  "filterQuality": 0,
-                                  "invertColors": false,
-                                  "isAntiAlias": false,
-                                  "strokeCap": 0,
-                                  "strokeJoin": 0,
-                                  "strokeWidth": 0.0,
-                                  "style": 0
-                                };
-                                updatedContents.add(eraserRect);
-                                
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                  pageData.controller.clear();
-                                  if (updatedContents.isNotEmpty) {
-                                    pageData.controller.addContents(updatedContents.map((e) => _parseJsonToContent(e)).whereType<PaintContent>().toList());
-                                  }
-                                });
-                              }
-                            }
-                          }
-                        }
-                      },
-                    );
+              // 5. Drawing Board with stylus button eraser, eraser cursor & area eraser tracking
+              Listener(
+                onPointerMove: (event) {
+                  if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
+                    final isStylusButton = (event.buttons & kSecondaryMouseButton != 0) ||
+                                           (event.buttons & kPrimaryStylusButton != 0) ||
+                                           (event.buttons & kSecondaryStylusButton != 0) ||
+                                           (event.kind == ui.PointerDeviceKind.invertedStylus);
+                    if (isStylusButton && _activeTool != 'Eraser') {
+                      _previousToolBeforeStylus = _activeTool;
+                      _activeTool = 'Eraser';
+                      _applyDrawingToolToActivePage();
+                    }
+                    if (_activeTool == 'Eraser') {
+                      setState(() => _eraserCursorPosition = event.localPosition);
+                    }
                   }
+                },
+                onPointerDown: (event) {
+                  if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
+                    final isStylusButton = (event.buttons & kSecondaryMouseButton != 0) ||
+                                           (event.buttons & kPrimaryStylusButton != 0) ||
+                                           (event.buttons & kSecondaryStylusButton != 0) ||
+                                           (event.kind == ui.PointerDeviceKind.invertedStylus);
+                    if (isStylusButton && _activeTool != 'Eraser') {
+                      _previousToolBeforeStylus = _activeTool;
+                      _activeTool = 'Eraser';
+                      _applyDrawingToolToActivePage();
+                    }
+                    if (!_toolbarPinned && _toolbarVisible) {
+                      setState(() => _toolbarVisible = false);
+                    }
+                    if (_activeTool == 'Eraser') {
+                      setState(() => _eraserCursorPosition = event.localPosition);
+                    }
+                  }
+                },
+                onPointerUp: (event) {
+                  if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
+                    if (_activeTool == 'Eraser') {
+                      setState(() => _eraserCursorPosition = null);
+                    }
+                    if (_previousToolBeforeStylus != null) {
+                      final revertTo = _previousToolBeforeStylus!;
+                      _previousToolBeforeStylus = null;
+                      setState(() {
+                        _activeTool = revertTo;
+                        _applyDrawingToolToActivePage();
+                      });
+                    }
+                  }
+                  if (!_toolbarPinned && !_toolbarVisible) {
+                    Future.delayed(const Duration(milliseconds: 1500), () {
+                      if (mounted && !_toolbarPinned) {
+                        setState(() => _toolbarVisible = true);
+                      }
+                    });
+                  }
+                },
+                child: IgnorePointer(
+                  ignoring: !isDrawingMode || _activeTool == 'AreaEraser',
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return DrawingBoard(
+                        controller: pageData.controller,
+                        background: Container(
+                          width: constraints.maxWidth,
+                          height: constraints.maxHeight,
+                          color: Colors.transparent,
+                        ),
+                        boardConstrained: true,
+                        onPointerDown: (_) {
+                          if (!_hasChanges) setState(() => _hasChanges = true);
+                        },
+                      );
+                    }
+                  ),
                 ),
               ),
+
+              // 6. Dedicated Area Eraser Gesture Capture & Real-time Red Selection Box
+              if (_currentMode == EditorMode.drawing && _activeTool == 'AreaEraser' && index == _activePageIndex)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (details) {
+                      setState(() {
+                        _areaEraserStart = details.localPosition;
+                        _areaEraserEnd = details.localPosition;
+                      });
+                    },
+                    onPanUpdate: (details) {
+                      setState(() {
+                        _areaEraserEnd = details.localPosition;
+                      });
+                    },
+                    onPanEnd: (details) {
+                      if (_areaEraserStart != null && _areaEraserEnd != null) {
+                        final selRect = Rect.fromPoints(_areaEraserStart!, _areaEraserEnd!);
+                        if (selRect.width > 2 || selRect.height > 2) {
+                          final history = List<PaintContent>.from(pageData.controller.getHistory);
+                          final List<PaintContent> survivingContents = [];
+                          
+                          for (final content in history) {
+                            if (content is SmoothLine) {
+                              final pts = content.points;
+                              final widths = content.strokeWidthList;
+                              List<Offset> currentChunk = [];
+                              List<double> currentWidths = [];
+                              
+                              for (int i = 0; i < pts.length; i++) {
+                                final pt = pts[i];
+                                final w = i < widths.length ? widths[i] : content.paint.strokeWidth;
+                                
+                                if (!selRect.contains(pt)) {
+                                  currentChunk.add(pt);
+                                  currentWidths.add(w);
+                                } else {
+                                  if (currentChunk.isNotEmpty) {
+                                    final segPts = currentChunk.length == 1 
+                                        ? [currentChunk.first, currentChunk.first] 
+                                        : List<Offset>.from(currentChunk);
+                                    final segWidths = currentWidths.length == 1 
+                                        ? [currentWidths.first, currentWidths.first] 
+                                        : List<double>.from(currentWidths);
+                                    
+                                    survivingContents.add(
+                                      SmoothLine.data(
+                                        brushPrecision: content.brushPrecision,
+                                        minPointDistance: content.minPointDistance,
+                                        useBezierCurve: content.useBezierCurve,
+                                        smoothLevel: content.smoothLevel,
+                                        points: segPts,
+                                        strokeWidthList: segWidths,
+                                        paint: Paint()
+                                          ..color = content.paint.color
+                                          ..strokeWidth = content.paint.strokeWidth
+                                          ..style = content.paint.style
+                                          ..strokeCap = content.paint.strokeCap
+                                          ..strokeJoin = content.paint.strokeJoin,
+                                      ),
+                                    );
+                                    currentChunk = [];
+                                    currentWidths = [];
+                                  }
+                                }
+                              }
+                              
+                              if (currentChunk.isNotEmpty) {
+                                final segPts = currentChunk.length == 1 
+                                    ? [currentChunk.first, currentChunk.first] 
+                                    : List<Offset>.from(currentChunk);
+                                final segWidths = currentWidths.length == 1 
+                                    ? [currentWidths.first, currentWidths.first] 
+                                    : List<double>.from(currentWidths);
+                                
+                                survivingContents.add(
+                                  SmoothLine.data(
+                                    brushPrecision: content.brushPrecision,
+                                    minPointDistance: content.minPointDistance,
+                                    useBezierCurve: content.useBezierCurve,
+                                    smoothLevel: content.smoothLevel,
+                                    points: segPts,
+                                    strokeWidthList: segWidths,
+                                    paint: Paint()
+                                      ..color = content.paint.color
+                                      ..strokeWidth = content.paint.strokeWidth
+                                      ..style = content.paint.style
+                                      ..strokeCap = content.paint.strokeCap
+                                      ..strokeJoin = content.paint.strokeJoin,
+                                  ),
+                                );
+                              }
+                            } else if (content is HighlighterContent) {
+                              final pts = content.points;
+                              List<Offset> currentChunk = [];
+                              
+                              for (int i = 0; i < pts.length; i++) {
+                                final pt = pts[i];
+                                if (!selRect.contains(pt)) {
+                                  currentChunk.add(pt);
+                                } else {
+                                  if (currentChunk.isNotEmpty) {
+                                    final newHl = HighlighterContent();
+                                    newHl.points.addAll(currentChunk);
+                                    newHl.paint.color = content.paint.color;
+                                    newHl.paint.strokeWidth = content.paint.strokeWidth;
+                                    survivingContents.add(newHl);
+                                    currentChunk = [];
+                                  }
+                                }
+                              }
+                              if (currentChunk.isNotEmpty) {
+                                final newHl = HighlighterContent();
+                                newHl.points.addAll(currentChunk);
+                                newHl.paint.color = content.paint.color;
+                                newHl.paint.strokeWidth = content.paint.strokeWidth;
+                                survivingContents.add(newHl);
+                              }
+                            } else if (content is SimpleLine) {
+                              final pts = content.points;
+                              if (pts != null && pts.isNotEmpty) {
+                                List<Offset> currentChunk = [];
+                                for (int i = 0; i < pts.length; i++) {
+                                  final pt = pts[i];
+                                  if (!selRect.contains(pt)) {
+                                    currentChunk.add(pt);
+                                  } else {
+                                    if (currentChunk.isNotEmpty) {
+                                      final segPts = currentChunk.length == 1 
+                                          ? [currentChunk.first, currentChunk.first] 
+                                          : List<Offset>.from(currentChunk);
+                                      survivingContents.add(
+                                        SimpleLine.data(
+                                          points: segPts,
+                                          paint: Paint()
+                                            ..color = content.paint.color
+                                            ..strokeWidth = content.paint.strokeWidth,
+                                        ),
+                                      );
+                                      currentChunk = [];
+                                    }
+                                  }
+                                }
+                                if (currentChunk.isNotEmpty) {
+                                  final segPts = currentChunk.length == 1 
+                                      ? [currentChunk.first, currentChunk.first] 
+                                      : List<Offset>.from(currentChunk);
+                                  survivingContents.add(
+                                    SimpleLine.data(
+                                      points: segPts,
+                                      paint: Paint()
+                                        ..color = content.paint.color
+                                        ..strokeWidth = content.paint.strokeWidth,
+                                    ),
+                                  );
+                                }
+                              }
+                            } else if (content is StraightLine) {
+                              final sp = content.startPoint;
+                              final ep = content.endPoint;
+                              if (sp != null && ep != null) {
+                                final dist = (ep - sp).distance;
+                                if (dist <= 2) {
+                                  if (!selRect.contains(sp)) survivingContents.add(content);
+                                } else {
+                                  final int steps = (dist / 2.0).ceil().clamp(2, 500);
+                                  List<Offset> currentChunk = [];
+                                  for (int i = 0; i <= steps; i++) {
+                                    final t = i / steps;
+                                    final pt = Offset(sp.dx + (ep.dx - sp.dx) * t, sp.dy + (ep.dy - sp.dy) * t);
+                                    if (!selRect.contains(pt)) {
+                                      currentChunk.add(pt);
+                                    } else {
+                                      if (currentChunk.length >= 2) {
+                                        final sl = StraightLine();
+                                        sl.paint = Paint()
+                                          ..color = content.paint.color
+                                          ..strokeWidth = content.paint.strokeWidth;
+                                        sl.startPoint = currentChunk.first;
+                                        sl.endPoint = currentChunk.last;
+                                        survivingContents.add(sl);
+                                      }
+                                      currentChunk = [];
+                                    }
+                                  }
+                                  if (currentChunk.length >= 2) {
+                                    final sl = StraightLine();
+                                    sl.paint = Paint()
+                                      ..color = content.paint.color
+                                      ..strokeWidth = content.paint.strokeWidth;
+                                    sl.startPoint = currentChunk.first;
+                                    sl.endPoint = currentChunk.last;
+                                    survivingContents.add(sl);
+                                  }
+                                }
+                              }
+                            } else if (content is Rectangle) {
+                              final sp = content.startPoint;
+                              final ep = content.endPoint;
+                              if (sp != null && ep != null) {
+                                final bothInside = selRect.contains(sp) && selRect.contains(ep);
+                                if (!bothInside) survivingContents.add(content);
+                              }
+                            } else if (content is Circle) {
+                              final sp = content.startPoint;
+                              final ep = content.endPoint;
+                              if (sp != null && ep != null) {
+                                final bothInside = selRect.contains(sp) && selRect.contains(ep);
+                                if (!bothInside) survivingContents.add(content);
+                              }
+                            } else if (content is ArrowContent) {
+                              final sp = content.start;
+                              final ep = content.end;
+                              if (sp != null && ep != null) {
+                                final bothInside = selRect.contains(sp) && selRect.contains(ep);
+                                if (!bothInside) survivingContents.add(content);
+                              }
+                            } else if (content is CustomTextContent) {
+                              if (content.offset != null && !selRect.contains(content.offset!)) {
+                                survivingContents.add(content);
+                              }
+                            } else if (content is Eraser) {
+                              // Eraser strokes don't need to be kept if erased
+                            } else {
+                              survivingContents.add(content);
+                            }
+                          }
+                          
+                          pageData.controller.clear();
+                          if (survivingContents.isNotEmpty) {
+                            pageData.controller.addContents(survivingContents);
+                          }
+                          _hasChanges = true;
+                        }
+                      }
+                      setState(() {
+                        _areaEraserStart = null;
+                        _areaEraserEnd = null;
+                      });
+                    },
+                    onPanCancel: () {
+                      setState(() {
+                        _areaEraserStart = null;
+                        _areaEraserEnd = null;
+                      });
+                    },
+                    child: (_areaEraserStart != null && _areaEraserEnd != null)
+                        ? CustomPaint(
+                            painter: _AreaEraserPainter(
+                              start: _areaEraserStart!,
+                              end: _areaEraserEnd!,
+                            ),
+                            child: Container(color: Colors.transparent),
+                          )
+                        : Container(color: Colors.transparent),
+                  ),
+                ),
             ],
           ),
         ),
       ),
-      // 5. Question crop rectangle overlay & gesture detector (OUTSIDE RepaintBoundary so capture is clean!)
+
+      // 7. Eraser cursor overlay (shown inside page frame with exact page alignment)
+      if (_activeTool == 'Eraser' && _currentMode == EditorMode.drawing && _eraserCursorPosition != null && index == _activePageIndex)
+        Builder(builder: (context) {
+          final eraserDiameter = _eraserStrokeWidth.clamp(8.0, 100.0);
+          final eraserRadius = eraserDiameter / 2;
+          return Positioned(
+            left: _eraserCursorPosition!.dx - eraserRadius,
+            top: _eraserCursorPosition!.dy - eraserRadius,
+            child: IgnorePointer(
+              child: Container(
+                width: eraserDiameter,
+                height: eraserDiameter,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.black, width: 1.8),
+                  color: Colors.black.withValues(alpha: 0.04),
+                ),
+              ),
+            ),
+          );
+        }),
+
+      // 8. Question crop rectangle overlay & gesture detector (OUTSIDE RepaintBoundary so capture is clean!)
       if (_currentMode == EditorMode.questionCrop)
         Positioned.fill(
           child: GestureDetector(
@@ -1126,242 +1985,344 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     );
   }
 
-  Widget _buildTopInterface() {
-    final hasBg = _pages.isNotEmpty &&
-        _pages[_activePageIndex].backgroundImageBase64 != null &&
-        _pages[_activePageIndex].backgroundImageBase64!.isNotEmpty;
-    
-    int activePropertyIndex = 0;
-    
-    if (_selectedTextBoxId != null) {
-      activePropertyIndex = 2; // TextBox properties
-    } else if (_currentMode == EditorMode.drawing) {
-      activePropertyIndex = 1; // Drawing properties
-    } else if (_currentMode == EditorMode.pan) {
-      activePropertyIndex = 3; // Pan / Move mode status toolbar
-    } else if (!hasBg && _currentMode == EditorMode.text) {
-      activePropertyIndex = 0; // Text properties
-    } else {
-      activePropertyIndex = 3;
+  String _normalizeSearchText(String s) {
+    return s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .replaceAll('Ğ', 'ğ')
+        .replaceAll('Ü', 'ü')
+        .replaceAll('Ş', 'ş')
+        .replaceAll('Ö', 'ö')
+        .replaceAll('Ç', 'ç')
+        .toLowerCase();
+  }
+
+  Future<String> _getPageOcrText(int index) async {
+    if (_pageOcrTextCache.containsKey(index)) {
+      return _pageOcrTextCache[index]!;
     }
-    
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+
+    if (index < 0 || index >= _pages.length) return '';
+    final page = _pages[index];
+    final b64 = page.backgroundImageBase64;
+
+    File? imageFile;
+
+    try {
+      if (b64 != null && b64.isNotEmpty) {
+        final bytes = base64Decode(b64);
+        final tmpDir = await getTemporaryDirectory();
+        final tmpFile = File('${tmpDir.path}/ocr_page_${index}_${DateTime.now().millisecondsSinceEpoch}.png');
+        await tmpFile.writeAsBytes(bytes);
+        imageFile = tmpFile;
+
+        final inputImage = InputImage.fromFile(imageFile);
+        final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
+        final extracted = _normalizeSearchText(recognizedText.text);
+        _pageOcrTextCache[index] = extracted;
+
+        try { await imageFile.delete(); } catch (_) {}
+        return extracted;
+      }
+    } catch (e) {
+      debugPrint('OCR error on page $index: $e');
+      if (imageFile != null) {
+        try { await imageFile.delete(); } catch (_) {}
+      }
+    }
+
+    _pageOcrTextCache[index] = '';
+    return '';
+  }
+
+  Future<void> _performSearch(String query) async {
+    final rawQuery = query.trim();
+    if (rawQuery.isEmpty) {
+      setState(() {
+        _searchMatchedPageIndices = [];
+        _currentSearchResultIndex = 0;
+        _isOcrScanning = false;
+      });
+      return;
+    }
+
+    final q = _normalizeSearchText(rawQuery);
+    final matches = <int>[];
+
+    // 1. Hızlı önbellek ve metin araması (El notları, metin kutuları ve taranmış sayfalar)
+    for (int i = 0; i < _pages.length; i++) {
+      final p = _pages[i];
+      final pageText = _normalizeSearchText(p.textController.text);
+      final hasInText = pageText.contains(q);
+      final hasInBoxes = p.textBoxOverlays.any((tb) => _normalizeSearchText(tb.text).contains(q));
+      final hasInCachedOcr = _pageOcrTextCache[i]?.contains(q) ?? false;
+
+      if (hasInText || hasInBoxes || hasInCachedOcr) {
+        if (!matches.contains(i)) matches.add(i);
+      }
+    }
+
+    setState(() {
+      _searchMatchedPageIndices = List.from(matches);
+      _currentSearchResultIndex = 0;
+    });
+
+    if (matches.isNotEmpty) {
+      _pageController.animateToPage(
+        matches.first,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+
+    // 2. Henüz taranmamış sayfa görsellerini OCR (Yapay Zeka) ile tarama
+    final uncachedIndices = <int>[];
+    for (int i = 0; i < _pages.length; i++) {
+      if (!_pageOcrTextCache.containsKey(i)) {
+        uncachedIndices.add(i);
+      }
+    }
+
+    if (uncachedIndices.isNotEmpty) {
+      setState(() => _isOcrScanning = true);
+      for (final idx in uncachedIndices) {
+        if (!_isSearching || _normalizeSearchText(_searchCtrl.text.trim()) != q) {
+          break;
+        }
+        final ocrText = await _getPageOcrText(idx);
+        if (ocrText.contains(q) && !matches.contains(idx)) {
+          matches.add(idx);
+          matches.sort();
+          if (mounted && _isSearching && _normalizeSearchText(_searchCtrl.text.trim()) == q) {
+            setState(() {
+              _searchMatchedPageIndices = List.from(matches);
+            });
+            if (_searchMatchedPageIndices.length == 1) {
+              _pageController.animateToPage(
+                idx,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              );
+            }
+          }
+        }
+      }
+      if (mounted) {
+        setState(() => _isOcrScanning = false);
+      }
+    }
+  }
+
+  void _nextSearchResult() {
+    if (_searchMatchedPageIndices.isEmpty) return;
+    setState(() {
+      _currentSearchResultIndex = (_currentSearchResultIndex + 1) % _searchMatchedPageIndices.length;
+    });
+    _pageController.animateToPage(
+      _searchMatchedPageIndices[_currentSearchResultIndex],
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _prevSearchResult() {
+    if (_searchMatchedPageIndices.isEmpty) return;
+    setState(() {
+      _currentSearchResultIndex = (_currentSearchResultIndex - 1 + _searchMatchedPageIndices.length) % _searchMatchedPageIndices.length;
+    });
+    _pageController.animateToPage(
+      _searchMatchedPageIndices[_currentSearchResultIndex],
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  Widget _buildTopSearchBar() {
+    final matchCount = _searchMatchedPageIndices.length;
+    final currentMatchDisplay = matchCount > 0 ? '${_currentSearchResultIndex + 1}/$matchCount' : '0/0';
+
+    return Row(
       children: [
-        // Top Header Row matching PhotoNoteViewerScreen style
-        Container(
-          color: Colors.black.withValues(alpha: 0.6),
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: TextField(
-                      controller: _titleCtrl,
-                      style: const TextStyle(
-                        color: Colors.white, 
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Sayfa Başlığı...',
-                        hintStyle: TextStyle(color: Colors.white38, fontSize: 15),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
-                        fillColor: Colors.transparent,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-                      ),
-                      onChanged: (_) => setState(() => _hasChanges = true),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      _showShortcut ? Icons.style_rounded : Icons.style_outlined,
-                      color: _showShortcut ? const Color(0xFF14B8A6) : Colors.white70,
-                      size: 22,
-                    ),
-                    tooltip: 'Görsel & Bilgi Kartları',
-                    onPressed: () => setState(() => _showShortcut = !_showShortcut),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
-                      color: _showCalculator ? const Color(0xFF14B8A6) : Colors.white70,
-                      size: 22,
-                    ),
-                    tooltip: 'Hesap Makinesi',
-                    onPressed: () => setState(() => _showCalculator = !_showCalculator),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 22),
-                    tooltip: 'PDF Olarak Paylaş',
-                    onPressed: _exportAsPdf,
-                  ),
-                ],
-              ),
+        const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 22),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextField(
+            controller: _searchCtrl,
+            autofocus: true,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            decoration: const InputDecoration(
+              hintText: 'Kitap içinde kelime ara...',
+              hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.symmetric(vertical: 6),
             ),
+            onChanged: _performSearch,
           ),
         ),
-
-        // Main Tools Toolbar (Hareket, Kalem, Fosforlu, Silgi, +Resim)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-          child: _buildMainToolbar(hasBg: hasBg),
-        ),
-
-        // Secondary Property Bar
-        if (activePropertyIndex != 3)
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            height: 60,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10)],
-                ),
-                child: IndexedStack(
-                  index: activePropertyIndex,
-                  children: [
-                    _buildTextToolbarContent(),
-                    _buildDrawingToolbarContent(),
-                    _buildTextBoxToolbarContent(),
-                    _buildPanToolbarContent(),
-                  ],
-                ),
-              ),
+        if (_isOcrScanning) ...[
+          const SizedBox(width: 4),
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFF14B8A6),
             ),
           ),
-
+          const SizedBox(width: 4),
+        ],
+        if (_searchCtrl.text.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              currentMatchDisplay,
+              style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 22),
+            tooltip: 'Önceki Eşleşme',
+            onPressed: matchCount > 0 ? _prevSearchResult : null,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+            tooltip: 'Sonraki Eşleşme',
+            onPressed: matchCount > 0 ? _nextSearchResult : null,
+          ),
+        ],
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+          tooltip: 'Aramayı Kapat',
+          onPressed: () {
+            setState(() {
+              _isSearching = false;
+              _searchCtrl.clear();
+              _searchMatchedPageIndices = [];
+              _isOcrScanning = false;
+            });
+          },
+        ),
       ],
     );
   }
 
-
-  Widget _buildPanToolbarContent() {
-    return const SizedBox.shrink();
-  }
-
-  Widget _buildMainToolbar({bool hasBg = false}) {
+  Widget _buildTopAppBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
-        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, spreadRadius: 1)],
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _ToolbarAction(
-              icon: Icons.pan_tool_rounded, 
-              label: 'Hareket', 
-              active: _currentMode == EditorMode.pan,
-              onTap: () {
-                setState(() {
-                  _selectedTextBoxId = null;
-                  _selectedImageId = null;
-                  _currentMode = EditorMode.pan;
-                });
-              },
-            ),
-            const VerticalDivider(),
-            _ToolbarAction(
-              icon: Icons.brush, 
-              label: 'Kalem', 
-              onTap: () {
-                 setState(() {
-                    _selectedTextBoxId = null;
-                    _selectedImageId = null;
-                    _currentMode = EditorMode.drawing;
-                    _activeTool = 'SmoothLine';
-                    _applyDrawingToolToActivePage();
-                 });
-              },
-              active: _currentMode == EditorMode.drawing && _activeTool == 'SmoothLine',
-            ),
-            const VerticalDivider(),
-            _ToolbarAction(
-              icon: Icons.border_color_rounded, 
-              label: 'Fosforlu', 
-              onTap: () {
-                 setState(() {
-                    _selectedTextBoxId = null;
-                    _selectedImageId = null;
-                    _currentMode = EditorMode.drawing;
-                    _activeTool = 'Highlighter';
-                    _applyDrawingToolToActivePage();
-                 });
-              },
-              active: _currentMode == EditorMode.drawing && _activeTool == 'Highlighter',
-            ),
-            const VerticalDivider(),
-            _ToolbarAction(
-              icon: Icons.auto_fix_normal, 
-              label: 'Silgi', 
-              onTap: () {
-                 setState(() {
-                    _selectedTextBoxId = null;
-                    _selectedImageId = null;
-                    _currentMode = EditorMode.drawing;
-                    _activeTool = 'Eraser';
-                    _applyDrawingToolToActivePage();
-                 });
-              },
-              active: _currentMode == EditorMode.drawing && (_activeTool == 'Eraser' || _activeTool == 'AreaEraser'),
-            ),
-            const VerticalDivider(),
-            _ToolbarAction(
-              icon: Icons.add_photo_alternate, 
-              label: '+Resim', 
-              onTap: _pickImage,
-            ),
-            const VerticalDivider(),
-            _ToolbarAction(
-              icon: Icons.content_cut_rounded,
-              label: 'Soru Kırp',
-              active: _currentMode == EditorMode.questionCrop,
-              onTap: () {
-                setState(() {
-                  _selectedTextBoxId = null;
-                  _selectedImageId = null;
-                  _currentMode = EditorMode.questionCrop;
-                  _cropStartPoint = null;
-                  _cropEndPoint = null;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✂️ Ekranda kaydetmek istediğiniz sorunun etrafına parmağınızla kutu çizin.'),
-                    backgroundColor: Color(0xFFF59E0B),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-            ),
-          ],
+      color: Colors.black.withValues(alpha: 0.75),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: _isSearching
+              ? _buildTopSearchBar()
+              : Row(
+                  children: [
+                    // 1. < (Geri Dön)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      onPressed: () async {
+                        final shouldPop = await _onBackPressed();
+                        if (shouldPop && mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
+
+                    // 2. Geri Alma (Undo)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.undo_rounded, color: Colors.white70, size: 22),
+                      tooltip: 'Geri Al',
+                      onPressed: () {
+                        _pages[_activePageIndex].controller.undo();
+                        if (!_hasChanges) setState(() => _hasChanges = true);
+                      },
+                    ),
+
+                    // 3. İleri Alma (Redo)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.redo_rounded, color: Colors.white70, size: 22),
+                      tooltip: 'İleri Al',
+                      onPressed: () {
+                        _pages[_activePageIndex].controller.redo();
+                        if (!_hasChanges) setState(() => _hasChanges = true);
+                      },
+                    ),
+
+                    // 4. Büyüteç (Kelime Ara)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 23),
+                      tooltip: 'Kelime Ara',
+                      onPressed: () {
+                        setState(() {
+                          _isSearching = true;
+                          _searchCtrl.clear();
+                          _searchMatchedPageIndices = [];
+                        });
+                      },
+                    ),
+
+                    const Spacer(),
+
+                    // 5. Kartlar (Görsel & Bilgi Kartları)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        _showShortcut ? Icons.style_rounded : Icons.style_outlined,
+                        color: _showShortcut ? const Color(0xFF14B8A6) : Colors.white70,
+                        size: 22,
+                      ),
+                      tooltip: 'Görsel & Bilgi Kartları',
+                      onPressed: () => setState(() => _showShortcut = !_showShortcut),
+                    ),
+
+                    // 6. Hesap Makinesi
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
+                        color: _showCalculator ? const Color(0xFF14B8A6) : Colors.white70,
+                        size: 22,
+                      ),
+                      tooltip: 'Hesap Makinesi',
+                      onPressed: () => setState(() => _showCalculator = !_showCalculator),
+                    ),
+
+                    // 7. PDF Olarak Paylaş
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 22),
+                      tooltip: 'PDF Olarak Paylaş',
+                      onPressed: _exportAsPdf,
+                    ),
+
+                    // 8. Tam Ekran Yapma (Tüm Barları Gizle)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.fullscreen_rounded, color: Color(0xFF14B8A6), size: 25),
+                      tooltip: 'Tam Ekran (Barları Gizle)',
+                      onPressed: () => setState(() => _showUI = false),
+                    ),
+                  ],
+                ),
         ),
       ),
     );
   }
+
+
   
   void _applyDrawingToolToActivePage() {
       final controller = _pages[_activePageIndex].controller;
@@ -1378,25 +2339,35 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
       else if (_activeTool == 'StraightLine') controller.setPaintContent(StraightLine());
       else if (_activeTool == 'ArrowContent') controller.setPaintContent(ArrowContent());
       else if (_activeTool == 'Eraser') controller.setPaintContent(Eraser());
-      else if (_activeTool == 'AreaEraser') controller.setPaintContent(Rectangle());
+      // For AreaEraser, no PaintContent is added so DrawingBoard does not draw shapes
       
-      if (_activeTool == 'AreaEraser') {
-        controller.setStyle(color: Colors.red.withValues(alpha: 0.3), strokeWidth: 2.0);
-      } else if (_activeTool == 'Highlighter') {
-        final highlighterWidth = (_currentStrokeWidth * 3.5).clamp(8.0, 60.0);
-        controller.setStyle(color: _currentColor.withValues(alpha: 0.38), strokeWidth: highlighterWidth);
+      if (_activeTool == 'Highlighter') {
+        controller.setStyle(color: _currentColor.withValues(alpha: 0.38), strokeWidth: _highlighterStrokeWidth);
       } else if (_activeTool == 'Eraser') {
-        final eraserWidth = (_currentStrokeWidth * 2.5).clamp(4.0, 80.0);
-        controller.setStyle(color: Colors.white, strokeWidth: eraserWidth);
-      } else {
-        controller.setStyle(color: _currentColor, strokeWidth: _currentStrokeWidth);
+        controller.setStyle(color: Colors.white, strokeWidth: _eraserStrokeWidth);
+      } else if (_activeTool != 'AreaEraser') {
+        controller.setStyle(color: _currentColor, strokeWidth: _penStrokeWidth);
       }
       
       debugPrint('Tool applied successfully. Current PaintContent: ${controller.currentContent.runtimeType}');
   }
 
   Widget _buildDrawingToolbarContent() {
-    final isEraser = _activeTool == 'Eraser' || _activeTool == 'AreaEraser';
+    if (_activeTool == 'AreaEraser') {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.crop_free_rounded, color: Color(0xFF14B8A6), size: 18),
+          SizedBox(width: 8),
+          Text(
+            'Silmek istediğiniz alanın etrafına parmağınızla kutu çizin',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70),
+          ),
+        ],
+      );
+    }
+
+    final isEraser = _activeTool == 'Eraser';
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -1406,33 +2377,45 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isEraser ? Icons.auto_fix_normal : Icons.line_weight_rounded,
+                isEraser ? Icons.auto_fix_normal 
+                    : (_activeTool == 'Highlighter' ? Icons.border_color_rounded : Icons.line_weight_rounded),
                 color: const Color(0xFF14B8A6),
                 size: 18,
               ),
               const SizedBox(width: 6),
               Text(
-                isEraser ? 'Silgi Boyutu:' : 'Uç Boyutu:',
+                isEraser ? 'Silgi Boyutu:'
+                    : (_activeTool == 'Highlighter' ? 'Fosforlu Boyutu:' : 'Kalem Boyutu:'),
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
               ),
               SizedBox(
                 width: 120,
                 child: Slider(
-                  value: _currentStrokeWidth.clamp(1.0, 40.0),
-                  min: 1.0,
-                  max: 40.0,
+                  value: isEraser
+                      ? _eraserStrokeWidth.clamp(4.0, 80.0)
+                      : (_activeTool == 'Highlighter'
+                          ? _highlighterStrokeWidth.clamp(8.0, 60.0)
+                          : _penStrokeWidth.clamp(1.0, 40.0)),
+                  min: isEraser ? 4.0 : (_activeTool == 'Highlighter' ? 8.0 : 1.0),
+                  max: isEraser ? 80.0 : (_activeTool == 'Highlighter' ? 60.0 : 40.0),
                   activeColor: const Color(0xFF14B8A6),
                   inactiveColor: Colors.white24,
                   onChanged: (val) {
                     setState(() {
-                      _currentStrokeWidth = val;
+                      if (isEraser) {
+                        _eraserStrokeWidth = val;
+                      } else if (_activeTool == 'Highlighter') {
+                        _highlighterStrokeWidth = val;
+                      } else {
+                        _penStrokeWidth = val;
+                      }
                       _applyDrawingToolToActivePage();
                     });
                   },
                 ),
               ),
               Text(
-                isEraser ? '${(_currentStrokeWidth * 2.5).toInt()}px' : '${_currentStrokeWidth.toInt()}px',
+                '${_currentStrokeWidth.toInt()}px',
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
               ),
             ],
@@ -1876,88 +2859,613 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildBottomBar() {
     return Container(
-      color: Colors.black.withValues(alpha: 0.6),
+      color: const Color(0xFF0F172A).withValues(alpha: 0.94),
       child: SafeArea(
         top: false,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
           decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: Color(0xFF14B8A6), width: 0.5)),
+            border: Border(top: BorderSide(color: Color(0xFF14B8A6), width: 0.8)),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 28),
-                  onPressed: _activePageIndex > 0 
-                      ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _showGoToPageDialog,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+          child: Row(
+            children: [
+              // 1. Sabit 4 Temel Buton (Kaydırma gerektirmez)
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _ToolbarAction(
+                      icon: Icons.pan_tool_rounded, 
+                      label: 'Hareket', 
+                      active: _currentMode == EditorMode.pan,
+                      onTap: () {
+                        setState(() {
+                          _selectedTextBoxId = null;
+                          _selectedImageId = null;
+                          _currentMode = EditorMode.pan;
+                        });
+                      },
                     ),
-                    child: Row(
+                    _ToolbarAction(
+                      icon: Icons.add_photo_alternate, 
+                      label: '+Resim', 
+                      onTap: _pickImage,
+                    ),
+                    _ToolbarAction(
+                      icon: Icons.content_cut_rounded,
+                      label: 'Soru Kırp',
+                      active: _currentMode == EditorMode.questionCrop,
+                      onTap: () {
+                        setState(() {
+                          _selectedTextBoxId = null;
+                          _selectedImageId = null;
+                          _currentMode = EditorMode.questionCrop;
+                          _cropStartPoint = null;
+                          _cropEndPoint = null;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✂️ Ekranda kaydetmek istediğiniz sorunun etrafına parmağınızla kutu çizin.'),
+                            backgroundColor: Color(0xFFF59E0B),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              // Dikey Ayırıcı Çizgi
+              Container(
+                width: 1,
+                height: 28,
+                color: Colors.white24,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+              ),
+
+              // 2. Kompakt Sayfa Gezintisi: < 3/4 > +
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 26, minHeight: 28),
+                    icon: const Icon(Icons.chevron_left_rounded, color: Colors.white70, size: 22),
+                    onPressed: _activePageIndex > 0 
+                        ? () => _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                        : null,
+                  ),
+                  GestureDetector(
+                    onTap: _showGoToPageDialog,
+                    onLongPress: _showChangePaperTypeSheet,
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.import_contacts_rounded, size: 18, color: Color(0xFF14B8A6)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Sayfa ${_activePageIndex + 1} / ${_pages.length}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 13),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                          ),
+                          child: Text(
+                            '${_activePageIndex + 1}/${_pages.length}',
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6), fontSize: 11),
+                          ),
                         ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_drop_down, color: Color(0xFF14B8A6), size: 18),
+                        const SizedBox(height: 1),
+                        Text(
+                          _pages.isNotEmpty
+                              ? (_pages[_activePageIndex].paperType == 'lined'
+                                  ? '≡ çizgili'
+                                  : _pages[_activePageIndex].paperType == 'grid'
+                                      ? '# kareli'
+                                      : '□ boş')
+                              : '',
+                          style: const TextStyle(color: Colors.white38, fontSize: 8),
+                        ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 28),
-                  onPressed: _activePageIndex < _pages.length - 1 
-                      ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _addPage,
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('Sayfa Ekle', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF14B8A6),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 26, minHeight: 28),
+                    icon: const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 22),
+                    onPressed: _activePageIndex < _pages.length - 1 
+                        ? () => _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
+                        : null,
                   ),
-                ),
-              ],
-            ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF14B8A6), size: 24),
+                    tooltip: 'Sayfa Ekle',
+                    onPressed: _addPage,
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  Widget _buildFloatingDrawingBar() {
+    final isDrawing = _currentMode == EditorMode.drawing;
+    
+    return Positioned(
+      left: _floatingBarOffset.dx,
+      top: _floatingBarOffset.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          final size = MediaQuery.of(context).size;
+          setState(() {
+            final newX = (_floatingBarOffset.dx + details.delta.dx).clamp(8.0, size.width - 64.0);
+            final newY = (_floatingBarOffset.dy + details.delta.dy).clamp(MediaQuery.of(context).padding.top + 40.0, size.height - 280.0);
+            _floatingBarOffset = Offset(newX, newY);
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(_isFloatingBarExpanded ? 24 : 26),
+            border: Border.all(
+              color: isDrawing ? const Color(0xFF14B8A6) : Colors.white24,
+              width: isDrawing ? 1.6 : 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isDrawing 
+                    ? const Color(0xFF14B8A6).withValues(alpha: 0.35) 
+                    : Colors.black54,
+                blurRadius: 14,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: _isFloatingBarExpanded 
+              ? _buildExpandedVerticalBar()
+              : _buildMiniBubble(),
+        ),
+      ),
+    );
+  }
 
+  Widget _buildMiniBubble() {
+    final isDrawing = _currentMode == EditorMode.drawing;
+    IconData currentIcon = Icons.brush_rounded;
+    if (_activeTool == 'Highlighter') {
+      currentIcon = Icons.border_color_rounded;
+    } else if (_activeTool == 'Eraser') {
+      currentIcon = Icons.auto_fix_normal_rounded;
+    } else if (_activeTool == 'AreaEraser') {
+      currentIcon = Icons.crop_free_rounded;
+    }
 
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(26),
+        onTap: () {
+          setState(() {
+            _isFloatingBarExpanded = true;
+          });
+        },
+        child: Container(
+          width: 50,
+          height: 50,
+          alignment: Alignment.center,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(
+                currentIcon, 
+                color: isDrawing ? const Color(0xFF14B8A6) : Colors.white, 
+                size: 24,
+              ),
+              if (isDrawing && (_activeTool == 'SmoothLine' || _activeTool == 'Highlighter'))
+                Positioned(
+                  right: 2,
+                  bottom: 2,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: _currentColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.2),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
+  Widget _buildExpandedVerticalBar() {
+    return Container(
+      width: 52,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 1. Kalem İkonu / Kapat Butonu (Baloncuk Toggle)
+          GestureDetector(
+            onTap: () => setState(() => _isFloatingBarExpanded = false),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+              ),
+              child: const Icon(Icons.close_rounded, color: Color(0xFF14B8A6), size: 20),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(width: 32, height: 1, color: Colors.white12),
+          const SizedBox(height: 6),
 
-  void _setDrawingColor(Color color) {
-    setState(() {
-      _currentColor = color;
-      _applyDrawingToolToActivePage();
-    });
+          // 2. Kalem
+          _buildVerticalToolItem(
+            icon: Icons.brush_rounded,
+            label: 'Kalem',
+            active: _currentMode == EditorMode.drawing && _activeTool == 'SmoothLine',
+            onTap: () {
+              if (_currentMode == EditorMode.drawing && _activeTool == 'SmoothLine') {
+                _showSettingsBottomSheet();
+              } else {
+                setState(() {
+                  _selectedTextBoxId = null;
+                  _selectedImageId = null;
+                  _currentMode = EditorMode.drawing;
+                  _activeTool = 'SmoothLine';
+                  _applyDrawingToolToActivePage();
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 6),
+
+          // 3. Silgi
+          _buildVerticalToolItem(
+            icon: Icons.auto_fix_normal_rounded,
+            label: 'Silgi',
+            active: _currentMode == EditorMode.drawing && _activeTool == 'Eraser',
+            onTap: () {
+              if (_currentMode == EditorMode.drawing && _activeTool == 'Eraser') {
+                _showSettingsBottomSheet();
+              } else {
+                setState(() {
+                  _selectedTextBoxId = null;
+                  _selectedImageId = null;
+                  _currentMode = EditorMode.drawing;
+                  _activeTool = 'Eraser';
+                  _applyDrawingToolToActivePage();
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 6),
+
+          // 4. Alan Silgisi
+          _buildVerticalToolItem(
+            icon: Icons.crop_free_rounded,
+            label: 'Alan Sil',
+            active: _currentMode == EditorMode.drawing && _activeTool == 'AreaEraser',
+            onTap: () {
+              setState(() {
+                _selectedTextBoxId = null;
+                _selectedImageId = null;
+                _currentMode = EditorMode.drawing;
+                _activeTool = 'AreaEraser';
+                _applyDrawingToolToActivePage();
+              });
+            },
+          ),
+          const SizedBox(height: 6),
+
+          // 5. Fosforlu Kalem
+          _buildVerticalToolItem(
+            icon: Icons.border_color_rounded,
+            label: 'Fosforlu',
+            active: _currentMode == EditorMode.drawing && _activeTool == 'Highlighter',
+            onTap: () {
+              if (_currentMode == EditorMode.drawing && _activeTool == 'Highlighter') {
+                _showSettingsBottomSheet();
+              } else {
+                setState(() {
+                  _selectedTextBoxId = null;
+                  _selectedImageId = null;
+                  _currentMode = EditorMode.drawing;
+                  _activeTool = 'Highlighter';
+                  _applyDrawingToolToActivePage();
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 6),
+
+          // 6. Ayar ⚙️
+          _buildVerticalToolItem(
+            icon: Icons.tune_rounded,
+            label: 'Ayar',
+            active: false,
+            onTap: _showSettingsBottomSheet,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalToolItem({
+    required IconData icon,
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFF14B8A6) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(
+            icon,
+            color: active ? Colors.black : Colors.white70,
+            size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSettingsBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final isEraser = _activeTool == 'Eraser';
+            final isHighlighter = _activeTool == 'Highlighter';
+            final currentWidth = isEraser 
+                ? (_currentStrokeWidth * 2.5).clamp(4.0, 80.0) 
+                : _currentStrokeWidth.clamp(1.0, 40.0);
+
+            return Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFF14B8A6), width: 1.2),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black87, blurRadius: 20, spreadRadius: 2),
+                ],
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle Bar
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Header Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isEraser 
+                                  ? Icons.auto_fix_normal 
+                                  : isHighlighter 
+                                      ? Icons.border_color_rounded 
+                                      : Icons.brush,
+                              color: const Color(0xFF14B8A6),
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              isEraser 
+                                  ? 'Silgi Ayarları' 
+                                  : isHighlighter 
+                                      ? 'Fosforlu Kalem Ayarları' 
+                                      : 'Kalem Ayarları',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Section 1: Stroke Width / Size
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isEraser ? 'Silgi Kalınlığı' : 'Uç Kalınlığı',
+                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            '${currentWidth.toInt()} px',
+                            style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+
+                    Row(
+                      children: [
+                        // Live Preview Circle
+                        Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          child: Container(
+                            width: (currentWidth * 0.8).clamp(3.0, 32.0),
+                            height: (currentWidth * 0.8).clamp(3.0, 32.0),
+                            decoration: BoxDecoration(
+                              color: isEraser ? Colors.white : _currentColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white38, width: 1),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              activeTrackColor: const Color(0xFF14B8A6),
+                              inactiveTrackColor: Colors.white12,
+                              thumbColor: const Color(0xFF14B8A6),
+                              overlayColor: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                              trackHeight: 4,
+                            ),
+                            child: Slider(
+                              value: isEraser 
+                                  ? currentWidth.clamp(4.0, 80.0) 
+                                  : _currentStrokeWidth.clamp(1.0, 40.0),
+                              min: isEraser ? 4.0 : 1.0,
+                              max: isEraser ? 80.0 : 40.0,
+                              onChanged: (val) {
+                                setModalState(() {
+                                  if (isEraser) {
+                                    _currentStrokeWidth = val / 2.5;
+                                  } else {
+                                    _currentStrokeWidth = val;
+                                  }
+                                });
+                                setState(() {
+                                  _applyDrawingToolToActivePage();
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Section 2: Colors (Only for Pen & Highlighter)
+                    if (!isEraser) ...[
+                      const Text(
+                        'Renk Seçimi',
+                        style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          Colors.black,
+                          Colors.white,
+                          const Color(0xFFEF4444), // Red
+                          const Color(0xFF3B82F6), // Blue
+                          const Color(0xFF10B981), // Green
+                          const Color(0xFFF59E0B), // Amber / Yellow
+                          const Color(0xFFF97316), // Orange
+                          const Color(0xFF8B5CF6), // Purple
+                          const Color(0xFFEC4899), // Pink
+                          const Color(0xFF14B8A6), // Teal
+                        ].map((c) {
+                          final isSelected = _currentColor.toARGB32() == c.toARGB32();
+                          return GestureDetector(
+                            onTap: () {
+                              setModalState(() => _currentColor = c);
+                              setState(() {
+                                _currentColor = c;
+                                _applyDrawingToolToActivePage();
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF14B8A6) : Colors.white24,
+                                  width: isSelected ? 3.0 : 1.5,
+                                ),
+                                boxShadow: isSelected ? [
+                                  BoxShadow(
+                                    color: c.withValues(alpha: 0.5),
+                                    blurRadius: 10,
+                                    spreadRadius: 1,
+                                  )
+                                ] : null,
+                              ),
+                              child: isSelected 
+                                  ? Icon(
+                                      Icons.check_rounded, 
+                                      size: 20, 
+                                      color: c == Colors.white ? Colors.black : Colors.white,
+                                    ) 
+                                  : null,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
 
@@ -2333,5 +3841,45 @@ class HighlighterContent extends PaintContent {
     newContent.paint.color = paint.color;
     newContent.paint.strokeWidth = paint.strokeWidth;
     return newContent;
+  }
+}
+
+class _AreaEraserPainter extends CustomPainter {
+  final Offset start;
+  final Offset end;
+
+  _AreaEraserPainter({required this.start, required this.end});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromPoints(start, end);
+    
+    // 1. Semi-transparent red fill
+    final fillPaint = Paint()
+      ..color = Colors.red.withValues(alpha: 0.18)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(rect, fillPaint);
+
+    // 2. Bold red border
+    final borderPaint = Paint()
+      ..color = Colors.redAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawRect(rect, borderPaint);
+
+    // 3. Corner accent handles
+    final handlePaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+    const handleSize = 6.0;
+    canvas.drawCircle(rect.topLeft, handleSize / 2, handlePaint);
+    canvas.drawCircle(rect.topRight, handleSize / 2, handlePaint);
+    canvas.drawCircle(rect.bottomLeft, handleSize / 2, handlePaint);
+    canvas.drawCircle(rect.bottomRight, handleSize / 2, handlePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AreaEraserPainter oldDelegate) {
+    return oldDelegate.start != start || oldDelegate.end != end;
   }
 }

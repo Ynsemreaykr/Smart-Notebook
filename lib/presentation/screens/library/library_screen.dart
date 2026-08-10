@@ -43,19 +43,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.dispose();
   }
 
-  void _createNewBook() {
-    context.read<BookProvider>().addBook().then((book) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('"${book.title}" oluşturuldu.'),
-            action: SnackBarAction(
-              label: 'Yeniden Adlandır',
-              onPressed: () => _showRenameDialog(book.id, book.title),
-            ),
-          ),
-        );
-      }
+  void _createNewBook() async {
+    final book = await context.read<BookProvider>().addBook();
+    if (!mounted) return;
+
+    final pageProvider = context.read<PageProvider>();
+    final newPage = await pageProvider.addPage(book.id, 'Sayfa 1', isAdvanced: true);
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PageEditorScreen(
+          pageId: newPage.id,
+          bookId: book.id,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) context.read<BookProvider>().loadBooks();
     });
   }
 

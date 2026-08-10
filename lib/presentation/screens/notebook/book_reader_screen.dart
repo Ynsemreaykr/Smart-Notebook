@@ -371,13 +371,18 @@ class _FullScreenPageContent extends StatelessWidget {
     final hasFilePath = page.imagePath != null && File(page.imagePath!).existsSync();
 
     return Container(
-      color: Colors.black,
+      color: (hasBg || hasDrawing || hasFilePath) ? Colors.white : const Color(0xFF0F172A),
       child: Stack(
         fit: StackFit.expand,
         children: [
           // Background image (PDF page or drawing background)
           if (hasBg)
-            Image.memory(page.backgroundImageBytes!, fit: BoxFit.contain, gaplessPlayback: true),
+            Container(
+              color: Colors.white,
+              child: Center(
+                child: Image.memory(page.backgroundImageBytes!, fit: BoxFit.contain, gaplessPlayback: true),
+              ),
+            ),
 
           // Drawing layer over background
           if (hasBg && hasDrawing)

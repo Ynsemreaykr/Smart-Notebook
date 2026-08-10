@@ -20,6 +20,7 @@ import '../../widgets/flip_card_widget.dart';
 import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_viewer_screen.dart';
 import 'photo_note_detail_text_screen.dart';
+import '../../widgets/transfer_sheet.dart';
 
 class PhotoNotesCategoryScreen extends StatefulWidget {
   final String category;
@@ -909,6 +910,15 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                 onTap: () {
                   Navigator.pop(ctx);
                   _showAddEditSheet(note: note);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_rounded, color: Color(0xFF8B5CF6)),
+                title: const AppText('Başka Üniteye Aktar', styleType: AppTextStyleType.bodyMedium),
+                subtitle: const AppText('Taşı · Etiketle · Kopyala', styleType: AppTextStyleType.caption),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showTransferSheet(context, note);
                 },
               ),
               ListTile(

@@ -6,6 +6,9 @@ class PhotoNote {
   final List<String> imageNotes;
   final List<bool> questionFlags;
   final String category;
+  /// Ek kategoriler / etiketler — "Etiketle" transfer modunda kullanılır.
+  /// Eski Hive kayıtlarında bu alan yoksa boş liste varsayılır (geriye dönük uyumlu).
+  final List<String> additionalCategories;
   final String color;
   final String note;
   final DateTime createdAt;
@@ -19,11 +22,13 @@ class PhotoNote {
     List<String>? imageNotes,
     List<bool>? questionFlags,
     this.category = '',
+    List<String>? additionalCategories,
     this.color = '#1E3A8A',
     this.note = '',
     required this.createdAt,
     required this.updatedAt,
-  })  : imagePaths = (imagePaths != null && imagePaths.isNotEmpty)
+  })  : additionalCategories = additionalCategories ?? const [],
+        imagePaths = (imagePaths != null && imagePaths.isNotEmpty)
             ? imagePaths
             : [imagePath],
         imageNotes = _initImageNotes(
@@ -103,6 +108,7 @@ class PhotoNote {
     List<String>? imageNotes,
     List<bool>? questionFlags,
     String? category,
+    List<String>? additionalCategories,
     String? color,
     String? note,
     DateTime? updatedAt,
@@ -124,6 +130,7 @@ class PhotoNote {
       imageNotes: sortedNotes,
       questionFlags: sortedFlags,
       category: category ?? this.category,
+      additionalCategories: additionalCategories ?? this.additionalCategories,
       color: color ?? this.color,
       note: note ?? this.note,
       createdAt: createdAt,
@@ -140,6 +147,7 @@ class PhotoNote {
       'imageNotes': imageNotes,
       'questionFlags': questionFlags,
       'category': category,
+      'additionalCategories': additionalCategories,
       'color': color,
       'note': note,
       'createdAt': createdAt.toIso8601String(),
@@ -167,6 +175,11 @@ class PhotoNote {
       parsedFlags = List<bool>.from(rawFlags.map((e) => e == true));
     }
 
+    final rawAdditional = map['additionalCategories'];
+    final List<String> parsedAdditional = rawAdditional != null && rawAdditional is List
+        ? List<String>.from(rawAdditional.map((e) => e.toString()))
+        : [];
+
     return PhotoNote(
       id: map['id'] as String,
       title: map['title'] as String,
@@ -175,6 +188,7 @@ class PhotoNote {
       imageNotes: parsedNotes,
       questionFlags: parsedFlags,
       category: map['category'] as String? ?? '',
+      additionalCategories: parsedAdditional,
       color: map['color'] as String? ?? '#1E3A8A',
       note: defaultNote,
       createdAt: DateTime.parse(map['createdAt'] as String),
