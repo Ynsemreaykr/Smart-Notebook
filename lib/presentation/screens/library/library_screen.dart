@@ -134,6 +134,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ],
       ),
     ).then((newTitle) {
+      if (!mounted) return;
       if (newTitle != null && newTitle.isNotEmpty) {
         context.read<BookProvider>().renameBook(bookId, newTitle);
       }
@@ -307,6 +308,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ],
       ),
     ).then((newName) {
+      if (!mounted) return;
       if (newName != null && newName.isNotEmpty && newName != oldName) {
         context.read<BookProvider>().renameCategory(oldName, newName);
         if (_selectedCategory == oldName) {
