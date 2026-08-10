@@ -2011,32 +2011,28 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                 ),
                               ),
 
-                              // Scrollable Note Content (Tıklandığında tam düzenleyiciyi açar)
+                              // Scrollable Note Content (Yalnızca okuma alanı, düzenlemek için üst bardaki Düzenle butonuna basılır)
                               Expanded(
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider),
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
-                                    child: Scrollbar(
-                                      thumbVisibility: true,
-                                      thickness: 3.5,
-                                      radius: const Radius.circular(3),
-                                      child: SingleChildScrollView(
-                                        physics: const BouncingScrollPhysics(),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
-                                              if (sIndex > 0) const SizedBox(height: 6),
-                                              Text(
-                                                overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
-                                                style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
-                                              ),
-                                            ],
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+                                  child: Scrollbar(
+                                    thumbVisibility: true,
+                                    thickness: 3.5,
+                                    radius: const Radius.circular(3),
+                                    child: SingleChildScrollView(
+                                      physics: const BouncingScrollPhysics(),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                            if (sIndex > 0) const SizedBox(height: 6),
+                                            Text(
+                                              overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
+                                              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                            ),
                                           ],
-                                        ),
+                                        ],
                                       ),
                                     ),
                                   ),
