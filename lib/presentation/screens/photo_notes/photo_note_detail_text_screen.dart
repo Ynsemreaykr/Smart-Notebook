@@ -23,7 +23,7 @@ class PhotoNoteDetailTextScreen extends StatefulWidget {
 }
 
 class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
-  late TextEditingController _textController;
+  late SearchHighlightTextEditingController _textController;
   Timer? _debounceTimer;
   Timer? _longPressResetTimer;
   bool _isSaving = false;
@@ -45,7 +45,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     final provider = context.read<PhotoNoteProvider>();
     final noteIndex = provider.photoNotes.indexWhere((n) => n.id == widget.noteId);
     final initialNote = noteIndex != -1 ? provider.photoNotes[noteIndex].note : '';
-    _textController = TextEditingController(text: initialNote);
+    _textController = SearchHighlightTextEditingController(text: initialNote);
     _textController.addListener(_onTextChanged);
   }
 
@@ -69,6 +69,9 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
         _searchController.clear();
         _searchMatches.clear();
         _currentMatchIndex = -1;
+        _textController.searchQuery = '';
+        _textController.searchMatches = [];
+        _textController.currentMatchIndex = -1;
       }
     });
 
@@ -91,6 +94,9 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
       setState(() {
         _searchMatches = [];
         _currentMatchIndex = -1;
+        _textController.searchQuery = '';
+        _textController.searchMatches = [];
+        _textController.currentMatchIndex = -1;
       });
       return;
     }
@@ -109,11 +115,15 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
 
     setState(() {
       _searchMatches = matches;
+      _textController.searchQuery = query;
+      _textController.searchMatches = matches;
       if (matches.isNotEmpty) {
         _currentMatchIndex = 0;
+        _textController.currentMatchIndex = 0;
         _highlightCurrentMatch();
       } else {
         _currentMatchIndex = -1;
+        _textController.currentMatchIndex = -1;
       }
     });
   }
@@ -132,6 +142,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     if (_searchMatches.isEmpty) return;
     setState(() {
       _currentMatchIndex = (_currentMatchIndex + 1) % _searchMatches.length;
+      _textController.currentMatchIndex = _currentMatchIndex;
       _highlightCurrentMatch();
     });
   }
@@ -140,6 +151,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     if (_searchMatches.isEmpty) return;
     setState(() {
       _currentMatchIndex = (_currentMatchIndex - 1 + _searchMatches.length) % _searchMatches.length;
+      _textController.currentMatchIndex = _currentMatchIndex;
       _highlightCurrentMatch();
     });
   }
@@ -649,3 +661,60 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
 );
 }
 }
+
+/// Custom TextEditingController that highlights search query matches inline in the editor
+class SearchHighlightTextEditingController extends TextEditingController {
+  String searchQuery = '';
+  int currentMatchIndex = -1;
+  List<int> searchMatches = [];
+
+  SearchHighlightTextEditingController({super.text});
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (searchQuery.trim().isEmpty || searchMatches.isEmpty) {
+      return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
+    }
+
+    final String fullText = text;
+    final String q = searchQuery.toLowerCase();
+    final List<InlineSpan> children = [];
+    int lastMatchEnd = 0;
+
+    for (int i = 0; i < searchMatches.length; i++) {
+      final int start = searchMatches[i];
+      if (start < lastMatchEnd) continue;
+
+      if (start > lastMatchEnd) {
+        children.add(TextSpan(text: fullText.substring(lastMatchEnd, start), style: style));
+      }
+
+      final int end = (start + q.length <= fullText.length) ? start + q.length : fullText.length;
+      final bool isCurrent = (i == currentMatchIndex);
+
+      children.add(
+        TextSpan(
+          text: fullText.substring(start, end),
+          style: style?.copyWith(
+            backgroundColor: isCurrent ? const Color(0xFFF59E0B) : const Color(0xFF14B8A6).withValues(alpha: 0.55),
+            color: isCurrent ? Colors.black : Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+
+      lastMatchEnd = end;
+    }
+
+    if (lastMatchEnd < fullText.length) {
+      children.add(TextSpan(text: fullText.substring(lastMatchEnd), style: style));
+    }
+
+    return TextSpan(style: style, children: children);
+  }
+}
+

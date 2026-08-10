@@ -108,15 +108,16 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     final sections = _parseSections(currentRawText);
     final existingText = (sectionIndex < sections.length) ? sections[sectionIndex] : '';
 
-    // Reuse or create controller with existing text
-    final secController = _sectionControllers.putIfAbsent(
-      secKey,
-      () => TextEditingController(text: existingText),
-    );
-    // If controller already existed but text differs (e.g. external update), sync it
-    if (secController.text != existingText && _sectionControllers.containsKey(secKey) == false) {
-      secController.text = existingText;
-      secController.selection = TextSelection.collapsed(offset: existingText.length);
+    // Reuse or create SearchHighlightTextEditingController with existing text
+    SearchHighlightTextEditingController secController;
+    if (_sectionControllers.containsKey(secKey) && _sectionControllers[secKey] is SearchHighlightTextEditingController) {
+      secController = _sectionControllers[secKey] as SearchHighlightTextEditingController;
+      if (secController.text != existingText) {
+        secController.text = existingText;
+      }
+    } else {
+      secController = SearchHighlightTextEditingController(text: existingText);
+      _sectionControllers[secKey] = secController;
     }
 
     final searchController = TextEditingController();
@@ -146,6 +147,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
             setDialogState(() {
               matches = [];
               currentMatchIndex = -1;
+              secController.searchQuery = '';
+              secController.searchMatches = [];
+              secController.currentMatchIndex = -1;
             });
             return;
           }
@@ -161,11 +165,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
           }
           setDialogState(() {
             matches = list;
+            secController.searchQuery = query;
+            secController.searchMatches = list;
             if (list.isNotEmpty) {
               currentMatchIndex = 0;
+              secController.currentMatchIndex = 0;
               highlightMatch(setDialogState);
             } else {
               currentMatchIndex = -1;
+              secController.currentMatchIndex = -1;
             }
           });
         }
@@ -177,6 +185,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
               searchController.clear();
               matches = [];
               currentMatchIndex = -1;
+              secController.searchQuery = '';
+              secController.searchMatches = [];
+              secController.currentMatchIndex = -1;
             }
           });
           if (isSearching) {
@@ -213,6 +224,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                       onPressed: () {
+                        secController.searchQuery = '';
+                        secController.searchMatches = [];
                         _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
                         Navigator.pop(ctx);
                       },
@@ -236,6 +249,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                         icon: const Icon(Icons.check_rounded, color: Color(0xFF14B8A6), size: 20),
                         label: const Text('Tamam', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 14)),
                         onPressed: () {
+                          secController.searchQuery = '';
+                          secController.searchMatches = [];
                           _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
                           Navigator.pop(ctx);
                         },
@@ -293,6 +308,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     ? () {
                                         setDialogState(() {
                                           currentMatchIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
+                                          secController.currentMatchIndex = currentMatchIndex;
                                           highlightMatch(setDialogState);
                                         });
                                       }
@@ -308,6 +324,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     ? () {
                                         setDialogState(() {
                                           currentMatchIndex = (currentMatchIndex + 1) % matches.length;
+                                          secController.currentMatchIndex = currentMatchIndex;
                                           highlightMatch(setDialogState);
                                         });
                                       }
@@ -2217,3 +2234,60 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
     );
   }
 }
+
+/// Custom TextEditingController that highlights search query matches inline in the editor
+class SearchHighlightTextEditingController extends TextEditingController {
+  String searchQuery = '';
+  int currentMatchIndex = -1;
+  List<int> searchMatches = [];
+
+  SearchHighlightTextEditingController({super.text});
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    if (searchQuery.trim().isEmpty || searchMatches.isEmpty) {
+      return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
+    }
+
+    final String fullText = text;
+    final String q = searchQuery.toLowerCase();
+    final List<InlineSpan> children = [];
+    int lastMatchEnd = 0;
+
+    for (int i = 0; i < searchMatches.length; i++) {
+      final int start = searchMatches[i];
+      if (start < lastMatchEnd) continue;
+
+      if (start > lastMatchEnd) {
+        children.add(TextSpan(text: fullText.substring(lastMatchEnd, start), style: style));
+      }
+
+      final int end = (start + q.length <= fullText.length) ? start + q.length : fullText.length;
+      final bool isCurrent = (i == currentMatchIndex);
+
+      children.add(
+        TextSpan(
+          text: fullText.substring(start, end),
+          style: style?.copyWith(
+            backgroundColor: isCurrent ? const Color(0xFFF59E0B) : const Color(0xFF14B8A6).withValues(alpha: 0.55),
+            color: isCurrent ? Colors.black : Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+
+      lastMatchEnd = end;
+    }
+
+    if (lastMatchEnd < fullText.length) {
+      children.add(TextSpan(text: fullText.substring(lastMatchEnd), style: style));
+    }
+
+    return TextSpan(style: style, children: children);
+  }
+}
+
