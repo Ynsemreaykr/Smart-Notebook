@@ -6,6 +6,7 @@ class Book extends HiveObject {
   DateTime createdAt;
   DateTime updatedAt;
   String coverColor;
+  String category;
 
   Book({
     required this.id,
@@ -13,12 +14,14 @@ class Book extends HiveObject {
     required this.createdAt,
     required this.updatedAt,
     this.coverColor = '#4A90D9',
+    this.category = '',
   });
 
   Book copyWith({
     String? title,
     DateTime? updatedAt,
     String? coverColor,
+    String? category,
   }) {
     return Book(
       id: id,
@@ -26,6 +29,7 @@ class Book extends HiveObject {
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       coverColor: coverColor ?? this.coverColor,
+      category: category ?? this.category,
     );
   }
 
@@ -35,6 +39,7 @@ class Book extends HiveObject {
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
         'coverColor': coverColor,
+        'category': category,
       };
 
   factory Book.fromJson(Map<dynamic, dynamic> json) => Book(
@@ -43,6 +48,7 @@ class Book extends HiveObject {
         createdAt: DateTime.parse(json['createdAt'] as String),
         updatedAt: DateTime.parse(json['updatedAt'] as String),
         coverColor: json['coverColor'] as String? ?? '#4A90D9',
+        category: json['category'] as String? ?? '',
       );
 }
 
@@ -63,12 +69,13 @@ class BookAdapter extends TypeAdapter<Book> {
       createdAt: fields[2] as DateTime,
       updatedAt: fields[3] as DateTime,
       coverColor: fields[4] as String? ?? '#4A90D9',
+      category: fields[5] as String? ?? '',
     );
   }
 
   @override
   void write(BinaryWriter writer, Book obj) {
-    writer.writeByte(5);
+    writer.writeByte(6);
     writer.writeByte(0);
     writer.write(obj.id);
     writer.writeByte(1);
@@ -79,5 +86,7 @@ class BookAdapter extends TypeAdapter<Book> {
     writer.write(obj.updatedAt);
     writer.writeByte(4);
     writer.write(obj.coverColor);
+    writer.writeByte(5);
+    writer.write(obj.category);
   }
 }

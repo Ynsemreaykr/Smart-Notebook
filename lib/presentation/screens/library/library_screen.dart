@@ -7,6 +7,7 @@ import '../../../data/repositories/page_repository.dart';
 import '../../../domain/models/book.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/book_card.dart';
+import '../../widgets/folder_card.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/file_picker_helper.dart';
@@ -24,6 +25,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final PageRepository _pageRepository = PageRepository();
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
+  String? _selectedCategory;
   
   // For floating book shortcut
   Book? _shortcutBook;
@@ -164,6 +166,189 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  void _showCreateFolderDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('📁 Yeni Klasör Oluştur'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Klasör adı (Örn: Coğrafya)',
+            prefixIcon: Icon(Icons.create_new_folder_rounded, color: Color(0xFFF59E0B)),
+          ),
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, controller.text.trim());
+              }
+            },
+            child: const Text('Oluştur'),
+          ),
+        ],
+      ),
+    ).then((folderName) {
+      if (folderName != null && folderName.isNotEmpty) {
+        setState(() {
+          _selectedCategory = folderName;
+        });
+      }
+    });
+  }
+
+  void _showMoveBookToCategoryDialog(Book book) {
+    final categories = context.read<BookProvider>().categories;
+    final textCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('"${book.title}" Klasöre Taşı'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Bir klasör seçin veya yeni klasör adı yazın:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Yeni Klasör Adı (Örn: Coğrafya)',
+                prefixIcon: Icon(Icons.folder_open_rounded, color: Color(0xFFF59E0B)),
+              ),
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 12),
+            if (categories.isNotEmpty) ...[
+              const Text('Mevcut Klasörler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.folder_off_rounded, size: 16),
+                    label: const Text('Klasörsüz (Çıkar)'),
+                    onPressed: () {
+                      context.read<BookProvider>().setBookCategory(book.id, '');
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                  ...categories.map((cat) => ActionChip(
+                    avatar: const Icon(Icons.folder_special_rounded, size: 16, color: Color(0xFFF59E0B)),
+                    label: Text(cat),
+                    backgroundColor: book.category == cat ? const Color(0xFFF59E0B).withValues(alpha: 0.2) : null,
+                    onPressed: () {
+                      context.read<BookProvider>().setBookCategory(book.id, cat);
+                      Navigator.pop(ctx);
+                    },
+                  )),
+                ],
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (textCtrl.text.trim().isNotEmpty) {
+                context.read<BookProvider>().setBookCategory(book.id, textCtrl.text.trim());
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Taşı'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRenameFolderDialog(String oldName) {
+    final controller = TextEditingController(text: oldName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$oldName Klasörünü Yeniden Adlandır'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Yeni klasör adı',
+            prefixIcon: Icon(Icons.folder_special_rounded, color: Color(0xFFF59E0B)),
+          ),
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                Navigator.pop(ctx, controller.text.trim());
+              }
+            },
+            child: const Text('Kaydet'),
+          ),
+        ],
+      ),
+    ).then((newName) {
+      if (newName != null && newName.isNotEmpty && newName != oldName) {
+        context.read<BookProvider>().renameCategory(oldName, newName);
+        if (_selectedCategory == oldName) {
+          setState(() {
+            _selectedCategory = newName;
+          });
+        }
+      }
+    });
+  }
+
+  void _showDeleteFolderDialog(String folderName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$folderName Klasörünü Kaldır'),
+        content: Text(
+          '"$folderName" klasörü kaldırılacak.\nİçindeki kitaplar silinmeyecek, ana kütüphaneye çıkarılacaktır.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.read<BookProvider>().deleteCategory(folderName);
+              if (_selectedCategory == folderName) {
+                setState(() {
+                  _selectedCategory = null;
+                });
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Klasörü Kaldır'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showInfoDialog() {
     showDialog(
       context: context,
@@ -198,8 +383,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     context.watch<ThemeProvider>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📚 Kitaplık'),
+        title: Text(_selectedCategory == null ? '📚 Kitaplık' : '📁 $_selectedCategory'),
+        leading: _selectedCategory != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                onPressed: () => setState(() => _selectedCategory = null),
+              )
+            : null,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.create_new_folder_rounded, color: Color(0xFFF59E0B)),
+            tooltip: 'Yeni Klasör',
+            onPressed: _showCreateFolderDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline_rounded),
             tooltip: 'Bilgi',
@@ -231,7 +427,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 controller: _searchCtrl,
                 style: TextStyle(color: AppTheme.textPrimary),
                 decoration: InputDecoration(
-                  hintText: 'Kitap ara...',
+                  hintText: 'Kitap veya klasör ara...',
                   prefixIcon: Icon(Icons.search_rounded, color: AppTheme.textSecondary),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
@@ -256,6 +452,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
               ),
             ),
+            if (_selectedCategory != null)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppTheme.darkCard,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => setState(() => _selectedCategory = null),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Row(
+                          children: [
+                            Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFFF59E0B), size: 16),
+                            SizedBox(width: 4),
+                            Text('Tüm Klasörler', style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text('•', style: TextStyle(color: Colors.white38)),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.folder_special_rounded, color: Color(0xFFF59E0B), size: 18),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '$_selectedCategory Klasörü',
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
             child: Consumer<BookProvider>(
               builder: (context, bookProvider, _) {
@@ -263,20 +499,78 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final filteredBooks = bookProvider.books.where((b) => b.title.toLowerCase().contains(_searchQuery)).toList();
+                final double screenWidth = MediaQuery.of(context).size.width;
+                final int crossAxisCount = screenWidth > 900 ? 4 : (screenWidth > 600 ? 3 : 2);
+                final allBooks = bookProvider.books;
 
-                if (filteredBooks.isEmpty) {
+                // Category folder view
+                if (_selectedCategory != null) {
+                  final folderBooks = allBooks
+                      .where((b) => b.category == _selectedCategory && b.title.toLowerCase().contains(_searchQuery))
+                      .toList();
+
+                  if (folderBooks.isEmpty) {
+                    return EmptyStateWidget(
+                      icon: Icons.folder_open_rounded,
+                      title: 'Klasör Boş',
+                      subtitle: '"$_selectedCategory" klasöründe henüz kitap yok.',
+                      actionLabel: 'Klasörden Çık',
+                      onAction: () => setState(() => _selectedCategory = null),
+                    );
+                  }
+
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      childAspectRatio: 0.85,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                    ),
+                    itemCount: folderBooks.length,
+                    itemBuilder: (context, index) {
+                      final book = folderBooks[index];
+                      final pageCount = _pageRepository.getPagesByBookId(book.id).length;
+
+                      return FadeSlideEntrance(
+                        delay: Duration(milliseconds: index * 50),
+                        child: GestureDetector(
+                          onLongPress: () {
+                            setState(() {
+                              _shortcutBook = book;
+                              _showShortcut = true;
+                            });
+                          },
+                          child: BookCard(
+                            book: book,
+                            pageCount: pageCount,
+                            onTap: () => _openBook(book),
+                            onRename: () => _showRenameDialog(book.id, book.title),
+                            onDelete: () => _showDeleteConfirmation(book.id, book.title),
+                            onMoveToCategory: () => _showMoveBookToCategoryDialog(book),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                }
+
+                // Main view: Folders + Standalone Books
+                final allCategories = bookProvider.categories;
+                final matchingCategories = allCategories.where((cat) => cat.toLowerCase().contains(_searchQuery)).toList();
+                final uncategorizedBooks = allBooks.where((b) => b.category.isEmpty && b.title.toLowerCase().contains(_searchQuery)).toList();
+
+                final totalItems = matchingCategories.length + uncategorizedBooks.length;
+
+                if (totalItems == 0) {
                   return EmptyStateWidget(
                     icon: Icons.library_books,
                     title: _searchQuery.isEmpty ? 'Henüz kitap yok' : 'Sonuç bulunamadı',
-                    subtitle: _searchQuery.isEmpty ? 'İlk kitabınızı oluşturarak başlayın' : 'Farklı bir arama yapın',
+                    subtitle: _searchQuery.isEmpty ? 'İlk kitabınızı veya klasörünüzü oluşturarak başlayın' : 'Farklı bir arama yapın',
                     actionLabel: _searchQuery.isEmpty ? 'Kitap Oluştur' : null,
                     onAction: _searchQuery.isEmpty ? _createNewBook : null,
                   );
                 }
-
-                final double screenWidth = MediaQuery.of(context).size.width;
-                final int crossAxisCount = screenWidth > 900 ? 4 : (screenWidth > 600 ? 3 : 2);
 
                 return GridView.builder(
                   padding: const EdgeInsets.all(12),
@@ -286,13 +580,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
-                  itemCount: filteredBooks.length,
+                  itemCount: totalItems,
                   itemBuilder: (context, index) {
-                    final book = filteredBooks[index];
-                    final pageCount =
-                        _pageRepository.getPagesByBookId(book.id).length;
+                    // Render Folder Cards first
+                    if (index < matchingCategories.length) {
+                      final catName = matchingCategories[index];
+                      final count = allBooks.where((b) => b.category == catName).length;
 
-                     return FadeSlideEntrance(
+                      return FadeSlideEntrance(
+                        delay: Duration(milliseconds: index * 50),
+                        child: FolderCard(
+                          categoryName: catName,
+                          bookCount: count,
+                          onTap: () => setState(() => _selectedCategory = catName),
+                          onRename: () => _showRenameFolderDialog(catName),
+                          onDelete: () => _showDeleteFolderDialog(catName),
+                        ),
+                      );
+                    }
+
+                    // Render Standalone Book Cards next
+                    final bookIndex = index - matchingCategories.length;
+                    final book = uncategorizedBooks[bookIndex];
+                    final pageCount = _pageRepository.getPagesByBookId(book.id).length;
+
+                    return FadeSlideEntrance(
                       delay: Duration(milliseconds: index * 50),
                       child: GestureDetector(
                         onLongPress: () {
@@ -307,6 +619,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           onTap: () => _openBook(book),
                           onRename: () => _showRenameDialog(book.id, book.title),
                           onDelete: () => _showDeleteConfirmation(book.id, book.title),
+                          onMoveToCategory: () => _showMoveBookToCategoryDialog(book),
                         ),
                       ),
                     );

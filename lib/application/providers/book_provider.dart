@@ -21,6 +21,54 @@ class BookProvider extends ChangeNotifier {
   List<Book> get books => _books;
   bool get isLoading => _isLoading;
 
+  /// Get all unique non-empty category/folder names
+  List<String> get categories {
+    final set = <String>{};
+    for (final b in _books) {
+      if (b.category.trim().isNotEmpty) {
+        set.add(b.category.trim());
+      }
+    }
+    return set.toList()..sort();
+  }
+
+  /// Assign a category/folder to a book
+  Future<void> setBookCategory(String bookId, String category) async {
+    final index = _books.indexWhere((b) => b.id == bookId);
+    if (index != -1) {
+      final updated = _books[index].copyWith(
+        category: category.trim(),
+        updatedAt: DateTime.now(),
+      );
+      await _bookRepository.updateBook(updated);
+      loadBooks();
+    }
+  }
+
+  /// Rename a category/folder across all contained books
+  Future<void> renameCategory(String oldName, String newName) async {
+    final trimmedNew = newName.trim();
+    if (trimmedNew.isEmpty) return;
+    for (final b in _books) {
+      if (b.category == oldName) {
+        final updated = b.copyWith(category: trimmedNew, updatedAt: DateTime.now());
+        await _bookRepository.updateBook(updated);
+      }
+    }
+    loadBooks();
+  }
+
+  /// Delete a category/folder (resets category of contained books to '')
+  Future<void> deleteCategory(String categoryName) async {
+    for (final b in _books) {
+      if (b.category == categoryName) {
+        final updated = b.copyWith(category: '', updatedAt: DateTime.now());
+        await _bookRepository.updateBook(updated);
+      }
+    }
+    loadBooks();
+  }
+
   /// Load all books
   void loadBooks() {
     _isLoading = true;

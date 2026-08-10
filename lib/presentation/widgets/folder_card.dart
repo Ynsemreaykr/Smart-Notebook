@@ -1,40 +1,29 @@
 import 'package:flutter/material.dart';
-import '../../domain/models/book.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/common/app_card.dart';
 import '../../widgets/common/app_text.dart';
 import 'bounce_button.dart';
 
-/// A modern square/rectangular book card with book symbol and page info
-class BookCard extends StatelessWidget {
-  final Book book;
-  final int pageCount;
+/// A sleek folder card representing a book category/folder in the library grid
+class FolderCard extends StatelessWidget {
+  final String categoryName;
+  final int bookCount;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
-  final VoidCallback? onMoveToCategory;
 
-  const BookCard({
+  const FolderCard({
     super.key,
-    required this.book,
-    required this.pageCount,
+    required this.categoryName,
+    required this.bookCount,
     required this.onTap,
     required this.onRename,
     required this.onDelete,
-    this.onMoveToCategory,
   });
-
-  Color _parseColor(String hex) {
-    try {
-      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
-    } catch (_) {
-      return AppColors.primary;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final themeColor = _parseColor(book.coverColor);
+    const accentColor = Color(0xFFF59E0B); // Amber / Gold theme for folder cards
 
     return GestureDetector(
       onLongPress: () => _showContextMenu(context),
@@ -44,10 +33,10 @@ class BookCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: themeColor.withOpacity(0.4), width: 1.5),
+            border: Border.all(color: accentColor.withValues(alpha: 0.45), width: 1.5),
             boxShadow: [
               BoxShadow(
-                color: themeColor.withOpacity(0.2),
+                color: accentColor.withValues(alpha: 0.2),
                 blurRadius: 10,
                 spreadRadius: 1,
                 offset: const Offset(0, 4),
@@ -58,7 +47,7 @@ class BookCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Stack(
               children: [
-                // Top Color Accent Bar
+                // Top Color Accent Bar (Amber gradient)
                 Positioned(
                   top: 0,
                   left: 0,
@@ -67,7 +56,7 @@ class BookCard extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [themeColor, themeColor.withOpacity(0.6)],
+                        colors: [accentColor, accentColor.withValues(alpha: 0.6)],
                       ),
                     ),
                   ),
@@ -77,19 +66,20 @@ class BookCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header Row: Book Icon Badge & Triple Dot Menu
+                      // Header Row: Folder Emblem & Menu
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: themeColor.withOpacity(0.18),
+                              color: accentColor.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: accentColor.withValues(alpha: 0.4), width: 1),
                             ),
-                            child: Icon(
-                              Icons.menu_book_rounded,
-                              color: themeColor,
+                            child: const Icon(
+                              Icons.folder_special_rounded,
+                              color: accentColor,
                               size: 26,
                             ),
                           ),
@@ -102,11 +92,11 @@ class BookCard extends StatelessWidget {
                         ],
                       ),
                       const Spacer(),
-                      // Book Title
+                      // Folder Name
                       AppText(
-                        book.title,
+                        categoryName,
                         styleType: AppTextStyleType.bodyLarge,
-                        styleOverride: TextStyle(
+                        styleOverride: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                           fontSize: 15,
@@ -115,24 +105,24 @@ class BookCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
-                      // Page Count Badge
+                      // Book Count Badge
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: themeColor.withOpacity(0.25),
+                          color: accentColor.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: themeColor.withOpacity(0.4), width: 1),
+                          border: Border.all(color: accentColor.withValues(alpha: 0.5), width: 1),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.description_outlined, size: 12, color: themeColor),
+                            const Icon(Icons.menu_book_rounded, size: 12, color: accentColor),
                             const SizedBox(width: 4),
                             AppText(
-                              '$pageCount Sayfa',
+                              '$bookCount Kitap',
                               styleType: AppTextStyleType.caption,
-                              styleOverride: TextStyle(
-                                color: themeColor,
+                              styleOverride: const TextStyle(
+                                color: accentColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 11,
                               ),
@@ -152,13 +142,13 @@ class BookCard extends StatelessWidget {
   }
 
   void _showContextMenu(BuildContext context) {
-    final accentColor = _parseColor(book.coverColor);
+    const accentColor = Color(0xFFF59E0B);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => AppCard(
         margin: const EdgeInsets.all(12),
-        borderColor: accentColor.withOpacity(0.3),
+        borderColor: accentColor.withValues(alpha: 0.3),
         shadowColor: accentColor,
         borderRadius: 20,
         padding: EdgeInsets.zero,
@@ -171,7 +161,7 @@ class BookCard extends StatelessWidget {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppColors.textMuted.withOpacity(0.4),
+                color: AppColors.textMuted.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -183,10 +173,10 @@ class BookCard extends StatelessWidget {
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
-                      color: accentColor.withOpacity(0.2),
+                      color: accentColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Icon(Icons.menu_book_rounded, color: accentColor, size: 24),
+                    child: const Icon(Icons.folder_special_rounded, color: accentColor, size: 24),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -194,13 +184,13 @@ class BookCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         AppText(
-                          book.title,
+                          '$categoryName Klasörü',
                           styleType: AppTextStyleType.bodyLarge,
                           styleOverride: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 4),
                         AppText(
-                          '$pageCount sayfa',
+                          '$bookCount kitap içeriyor',
                           styleType: AppTextStyleType.bodySmall,
                           color: AppColors.textSecondary,
                         ),
@@ -213,27 +203,16 @@ class BookCard extends StatelessWidget {
             const Divider(height: 1),
             ListTile(
               leading: Icon(Icons.edit_rounded, color: AppColors.glow),
-              title: const AppText('Yeniden Adlandır', styleType: AppTextStyleType.bodyMedium),
+              title: const AppText('Klasörü Yeniden Adlandır', styleType: AppTextStyleType.bodyMedium),
               onTap: () {
                 Navigator.pop(context);
                 onRename();
               },
             ),
-            if (onMoveToCategory != null)
-              ListTile(
-                leading: const Icon(Icons.folder_open_rounded, color: Color(0xFF14B8A6)),
-                title: AppText(
-                  book.category.isEmpty ? 'Klasöre Taşı' : 'Klasör Değiştir (${book.category})',
-                  styleType: AppTextStyleType.bodyMedium,
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  onMoveToCategory!();
-                },
-              ),
             ListTile(
-              leading: const Icon(Icons.delete_rounded, color: Colors.redAccent),
-              title: const AppText('Sil', styleType: AppTextStyleType.bodyMedium, color: Colors.redAccent),
+              leading: const Icon(Icons.folder_delete_rounded, color: Colors.redAccent),
+              title: const AppText('Klasörü Kaldır', styleType: AppTextStyleType.bodyMedium, color: Colors.redAccent),
+              subtitle: const AppText('Kitaplar silinmez, klasör dışına çıkarılır.', styleType: AppTextStyleType.caption),
               onTap: () {
                 Navigator.pop(context);
                 onDelete();
