@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/models/book.dart';
 import '../../domain/models/page.dart';
@@ -38,7 +39,7 @@ class DatabaseService {
     try {
       return await Hive.openBox<T>(name).timeout(const Duration(seconds: 4));
     } catch (e) {
-      print('Warning: Box $name failed to open normally: $e. Recovering...');
+      debugPrint('Warning: Box $name failed to open normally: $e. Recovering...');
       try {
         if (Hive.isBoxOpen(name)) {
           return Hive.box<T>(name);
@@ -46,7 +47,7 @@ class DatabaseService {
         await Hive.deleteBoxFromDisk(name);
         return await Hive.openBox<T>(name);
       } catch (err) {
-        print('Critical: Box $name recovery failed: $err');
+        debugPrint('Critical: Box $name recovery failed: $err');
         return await Hive.openBox<T>('${name}_safe');
       }
     }
