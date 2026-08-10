@@ -244,7 +244,9 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   bool _initialized = false;
   bool _hasChanges = false;
   bool _showCalculator = false;
-  bool _showShortcut = false;
+  static bool _showShortcutGlobal = false;
+  bool get _showShortcut => _showShortcutGlobal;
+  set _showShortcut(bool val) => _showShortcutGlobal = val;
   
   List<PageData> _pages = [PageData()];
   EditorMode _currentMode = EditorMode.pan;
