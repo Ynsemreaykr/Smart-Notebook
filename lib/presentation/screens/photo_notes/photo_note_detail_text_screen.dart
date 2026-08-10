@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../domain/models/photo_note.dart';
 import '../../../application/providers/photo_note_provider.dart';
@@ -28,6 +29,13 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
   bool _isSaving = false;
   bool _isLongPressing = false;
 
+  // Search state
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  List<int> _searchMatches = [];
+  int _currentMatchIndex = -1;
+
   final List<String> _quickSymbols = ['↑', '↓', '←', '→', '↗', '↘', '•', '⭐', '✔️', '⚠️'];
 
   @override
@@ -49,7 +57,91 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     _saveNoteImmediate();
     _textController.removeListener(_onTextChanged);
     _textController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _isSearching = !_isSearching;
+      if (!_isSearching) {
+        _searchController.clear();
+        _searchMatches.clear();
+        _currentMatchIndex = -1;
+      }
+    });
+
+    if (_isSearching) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _searchFocusNode.requestFocus();
+        if (_searchController.text.isNotEmpty) {
+          _searchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _searchController.text.length,
+          );
+          _performSearch(_searchController.text);
+        }
+      });
+    }
+  }
+
+  void _performSearch(String query) {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchMatches = [];
+        _currentMatchIndex = -1;
+      });
+      return;
+    }
+
+    final fullText = _textController.text.toLowerCase();
+    final q = query.toLowerCase();
+    final matches = <int>[];
+    int start = 0;
+
+    while (start < fullText.length) {
+      final index = fullText.indexOf(q, start);
+      if (index == -1) break;
+      matches.add(index);
+      start = index + q.length;
+    }
+
+    setState(() {
+      _searchMatches = matches;
+      if (matches.isNotEmpty) {
+        _currentMatchIndex = 0;
+        _highlightCurrentMatch();
+      } else {
+        _currentMatchIndex = -1;
+      }
+    });
+  }
+
+  void _highlightCurrentMatch() {
+    if (_searchMatches.isEmpty || _currentMatchIndex < 0 || _currentMatchIndex >= _searchMatches.length) return;
+    final start = _searchMatches[_currentMatchIndex];
+    final queryLen = _searchController.text.length;
+    _textController.selection = TextSelection(
+      baseOffset: start,
+      extentOffset: start + queryLen,
+    );
+  }
+
+  void _nextMatch() {
+    if (_searchMatches.isEmpty) return;
+    setState(() {
+      _currentMatchIndex = (_currentMatchIndex + 1) % _searchMatches.length;
+      _highlightCurrentMatch();
+    });
+  }
+
+  void _prevMatch() {
+    if (_searchMatches.isEmpty) return;
+    setState(() {
+      _currentMatchIndex = (_currentMatchIndex - 1 + _searchMatches.length) % _searchMatches.length;
+      _highlightCurrentMatch();
+    });
   }
 
   void _onTextChanged() {
@@ -167,6 +259,84 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
     _saveNoteImmediate();
   }
 
+  Widget _buildSearchBar() {
+    final matchCount = _searchMatches.length;
+    final currentPos = _currentMatchIndex >= 0 ? _currentMatchIndex + 1 : 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.medium),
+        border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.7), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF14B8A6).withValues(alpha: 0.15),
+            blurRadius: 10,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: const InputDecoration(
+                hintText: 'Not içinde ara... (Ctrl+F)',
+                hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 6),
+              ),
+              onChanged: _performSearch,
+            ),
+          ),
+          if (_searchController.text.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Text(
+                matchCount > 0 ? '$currentPos/$matchCount' : '0/0',
+                style: TextStyle(
+                  color: matchCount > 0 ? const Color(0xFF14B8A6) : Colors.redAccent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 22),
+            tooltip: 'Önceki Eşleşme',
+            onPressed: matchCount > 0 ? _prevMatch : null,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+            tooltip: 'Sonraki Eşleşme',
+            onPressed: matchCount > 0 ? _nextMatch : null,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+            tooltip: 'Aramayı Kapat',
+            onPressed: _toggleSearch,
+          ),
+        ],
+      ),
+    );
+  }
+
   Color _parseColor(String hex) {
     try {
       return Color(int.parse(hex.replaceFirst('#', '0xFF')));
@@ -202,39 +372,58 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
           onPopInvokedWithResult: (didPop, result) {
             _saveNoteImmediate();
           },
-          child: AppContainer(
-            hasGradient: true,
-            child: Scaffold(
-              backgroundColor: Colors.transparent,
-              appBar: AppBar(
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded),
-                  onPressed: () {
-                    _saveNoteImmediate();
-                    Navigator.pop(context);
-                  },
-                ),
-                title: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppText(
-                      note.title,
-                      styleType: AppTextStyleType.headingMedium,
-                      styleOverride: const TextStyle(fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.keyF, control: true): _toggleSearch,
+              const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _toggleSearch,
+            },
+            child: Focus(
+              autofocus: true,
+              child: AppContainer(
+                hasGradient: true,
+                child: Scaffold(
+                  backgroundColor: Colors.transparent,
+                  appBar: AppBar(
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                      onPressed: () {
+                        _saveNoteImmediate();
+                        Navigator.pop(context);
+                      },
                     ),
-                    AppText(
-                      'Görsel Ders Notu • ${note.category.isEmpty ? 'Genel' : note.category}',
-                      styleType: AppTextStyleType.caption,
-                      color: AppColors.textSecondary,
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppText(
+                          note.title,
+                          styleType: AppTextStyleType.headingMedium,
+                          styleOverride: const TextStyle(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        AppText(
+                          'Görsel Ders Notu • ${note.category.isEmpty ? 'Genel' : note.category}',
+                          styleType: AppTextStyleType.caption,
+                          color: AppColors.textSecondary,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                actions: [
-                  Container(
-                    margin: const EdgeInsets.only(right: 16),
-                    child: Center(
+                    actions: [
+                      // Not içi Arama Butonu (Ctrl+F)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: Icon(
+                          _isSearching ? Icons.search_off_rounded : Icons.search_rounded,
+                          color: _isSearching ? const Color(0xFF14B8A6) : Colors.white70,
+                          size: 22,
+                        ),
+                        tooltip: 'Not İçi Ara (Ctrl+F)',
+                        onPressed: _toggleSearch,
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        margin: const EdgeInsets.only(right: 16),
+                        child: Center(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 250),
                         child: _isSaving
@@ -280,6 +469,7 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (_isSearching) _buildSearchBar(),
                     // Visual Card Info Header (Shows which photo note card this belongs to)
                     AppCard(
                       margin: EdgeInsets.zero,
