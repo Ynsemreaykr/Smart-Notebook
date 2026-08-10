@@ -906,6 +906,102 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     }
   }
 
+  void _confirmDeletePage() {
+    if (_pages.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Kitaptaki tek sayfa silinemez.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final currentPageNum = _activePageIndex + 1;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 26),
+            const SizedBox(width: 8),
+            Text(
+              'Sayfa $currentPageNum Silinsin mi?',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          '$currentPageNum. sayfayı ve üzerindeki tüm çizimleri silmek istediğinizden emin misiniz?\n\nBu işlem geri alınamaz.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Vazgeç', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.medium),
+              ),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _deleteCurrentPage();
+            },
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteCurrentPage() async {
+    final indexToDelete = _activePageIndex;
+
+    // 1. Delete from Hive database if multi-page book
+    if (widget.bookId != null && indexToDelete < _notePageIds.length) {
+      final pageIdToDelete = _notePageIds[indexToDelete];
+      try {
+        final pageProvider = context.read<PageProvider>();
+        await pageProvider.deletePage(pageIdToDelete);
+        _notePageIds.removeAt(indexToDelete);
+      } catch (e) {
+        debugPrint('Error deleting page from Hive: $e');
+      }
+    }
+
+    // 2. Remove locally from state
+    setState(() {
+      _pages.removeAt(indexToDelete);
+      if (_activePageIndex >= _pages.length) {
+        _activePageIndex = _pages.length - 1;
+      }
+      _hasChanges = true;
+    });
+
+    // 3. Update PageController position
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(_activePageIndex);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🗑️ Sayfa ${indexToDelete + 1} silindi.'),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
 
   Future<void> _addNewPageFromGallery() async {
     try {
@@ -3117,6 +3213,14 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF14B8A6), size: 24),
                     tooltip: 'Sayfa Ekle',
                     onPressed: _addPage,
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                    tooltip: 'Sayfayı Sil',
+                    onPressed: _confirmDeletePage,
                   ),
                 ],
               ),
