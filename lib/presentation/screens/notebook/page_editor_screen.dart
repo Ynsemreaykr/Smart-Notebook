@@ -211,6 +211,24 @@ class OcrElementMatch {
   });
 }
 
+class SearchOccurrence {
+  final int pageIndex;
+  final OcrElementMatch? ocrElement;
+  final TextBoxOverlay? textBox;
+  final int matchStartIndex;
+  final int matchLength;
+  final Rect? subBoundingBox;
+
+  SearchOccurrence({
+    required this.pageIndex,
+    this.ocrElement,
+    this.textBox,
+    required this.matchStartIndex,
+    required this.matchLength,
+    this.subBoundingBox,
+  });
+}
+
 class PageEditorScreen extends StatefulWidget {
   final String pageId;
   /// Optional: if provided, all pages of the book are loaded (for PDF import multi-page support).
@@ -294,8 +312,9 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   bool _isSearching = false;
   bool _isOcrScanning = false;
   final TextEditingController _searchCtrl = TextEditingController();
-  List<int> _searchMatchedPageIndices = [];
-  int _currentSearchResultIndex = 0;
+  final FocusNode _searchFocusNode = FocusNode();
+  List<SearchOccurrence> _allSearchMatches = [];
+  int _currentSearchMatchIndex = 0;
   final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final Map<int, String> _pageOcrTextCache = {};
   final Map<int, List<OcrElementMatch>> _pageOcrElementsCache = {};
@@ -326,6 +345,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   void dispose() {
     _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
+    _searchFocusNode.dispose();
     _searchCtrl.dispose();
     _textRecognizer.close();
     _pageController.dispose();
@@ -1317,8 +1337,13 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                                 final elements = _pageOcrElementsCache[index] ?? [];
                                 final highlightBoxes = <Widget>[];
 
-                                if (currentQuery.isNotEmpty && elements.isNotEmpty) {
-                                  final imgSize = elements.first.imageSize;
+                                final pageMatches = _isSearching
+                                    ? _allSearchMatches.where((m) => m.pageIndex == index && m.ocrElement != null).toList()
+                                    : <SearchOccurrence>[];
+
+                                if (pageMatches.isNotEmpty) {
+                                  final firstElement = pageMatches.first.ocrElement!;
+                                  final imgSize = firstElement.imageSize;
                                   if (imgSize.width > 0 && imgSize.height > 0) {
                                     final scaleX = containerSize.width / imgSize.width;
                                     final scaleY = containerSize.height / imgSize.height;
@@ -1329,43 +1354,56 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                                     final dx = (containerSize.width - fittedWidth) / 2;
                                     final dy = (containerSize.height - fittedHeight) / 2;
 
-                                    for (final el in elements) {
-                                      if (el.text.isNotEmpty && (el.text.contains(currentQuery) || currentQuery.contains(el.text))) {
-                                        final box = el.boundingBox;
-                                        final left = dx + box.left * scale - 2;
-                                        final top = dy + box.top * scale - 2;
-                                        final width = box.width * scale + 4;
-                                        final height = box.height * scale + 4;
+                                    for (final match in pageMatches) {
+                                      final box = match.subBoundingBox ?? match.ocrElement!.boundingBox;
+                                      final left = dx + box.left * scale - 1;
+                                      final top = dy + box.top * scale - 1;
+                                      final width = box.width * scale + 2;
+                                      final height = box.height * scale + 2;
 
-                                        highlightBoxes.add(
-                                          Positioned(
-                                            left: left,
-                                            top: top,
-                                            width: width,
-                                            height: height,
-                                            child: IgnorePointer(
-                                              child: AnimatedContainer(
-                                                duration: const Duration(milliseconds: 150),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFFFFE600).withValues(alpha: 0.45),
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(
-                                                    color: const Color(0xFFF59E0B),
-                                                    width: 1.5,
-                                                  ),
-                                                  boxShadow: [
-                                                    BoxShadow(
-                                                      color: const Color(0xFFFFE600).withValues(alpha: 0.35),
-                                                      blurRadius: 6,
-                                                      spreadRadius: 1,
-                                                    ),
-                                                  ],
+                                      final matchGlobalIdx = _allSearchMatches.indexOf(match);
+                                      final isCurrentActiveMatch = (matchGlobalIdx == _currentSearchMatchIndex);
+
+                                      final bgColor = isCurrentActiveMatch
+                                          ? const Color(0xFFEF4444).withValues(alpha: 0.55)
+                                          : const Color(0xFFFFE600).withValues(alpha: 0.45);
+
+                                      final borderColor = isCurrentActiveMatch
+                                          ? const Color(0xFFDC2626)
+                                          : const Color(0xFFF59E0B);
+
+                                      final glowColor = isCurrentActiveMatch
+                                          ? const Color(0xFFEF4444).withValues(alpha: 0.5)
+                                          : const Color(0xFFFFE600).withValues(alpha: 0.35);
+
+                                      highlightBoxes.add(
+                                        Positioned(
+                                          left: left,
+                                          top: top,
+                                          width: width,
+                                          height: height,
+                                          child: IgnorePointer(
+                                            child: AnimatedContainer(
+                                              duration: const Duration(milliseconds: 150),
+                                              decoration: BoxDecoration(
+                                                color: bgColor,
+                                                borderRadius: BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: borderColor,
+                                                  width: isCurrentActiveMatch ? 2.5 : 1.5,
                                                 ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: glowColor,
+                                                    blurRadius: isCurrentActiveMatch ? 10 : 6,
+                                                    spreadRadius: isCurrentActiveMatch ? 2 : 1,
+                                                  ),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                        );
-                                      }
+                                        ),
+                                      );
                                     }
                                   }
                                 }
@@ -2274,43 +2312,104 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
     final rawQuery = query.trim();
     if (rawQuery.isEmpty) {
       setState(() {
-        _searchMatchedPageIndices = [];
-        _currentSearchResultIndex = 0;
+        _allSearchMatches = [];
+        _currentSearchMatchIndex = 0;
         _isOcrScanning = false;
       });
       return;
     }
 
     final q = _normalizeSearchText(rawQuery);
-    final matches = <int>[];
 
-    // 1. Hızlı önbellek ve metin araması (El notları, metin kutuları ve taranmış sayfalar)
-    for (int i = 0; i < _pages.length; i++) {
+    List<SearchOccurrence> collectMatchesForPage(int i) {
       final p = _pages[i];
-      final pageText = _normalizeSearchText(p.textController.text);
-      final hasInText = pageText.contains(q);
-      final hasInBoxes = p.textBoxOverlays.any((tb) => _normalizeSearchText(tb.text).contains(q));
-      final hasInCachedOcr = _pageOcrTextCache[i]?.contains(q) ?? false;
+      final List<SearchOccurrence> list = [];
 
-      if (hasInText || hasInBoxes || hasInCachedOcr) {
-        if (!matches.contains(i)) matches.add(i);
+      // 1. Text Box Overlays
+      for (final tb in p.textBoxOverlays) {
+        final normText = _normalizeSearchText(tb.text);
+        if (normText.isNotEmpty) {
+          int start = 0;
+          while (start < normText.length) {
+            final foundIdx = normText.indexOf(q, start);
+            if (foundIdx == -1) break;
+            list.add(SearchOccurrence(
+              pageIndex: i,
+              textBox: tb,
+              matchStartIndex: foundIdx,
+              matchLength: q.length,
+            ));
+            start = foundIdx + math.max(1, q.length);
+          }
+        }
       }
+
+      // 2. OCR Elements (Image Text Bounding Boxes)
+      final elements = _pageOcrElementsCache[i] ?? [];
+      for (final el in elements) {
+        final normText = _normalizeSearchText(el.text);
+        if (normText.isNotEmpty) {
+          int start = 0;
+          while (start < normText.length) {
+            final foundIdx = normText.indexOf(q, start);
+            if (foundIdx == -1) break;
+
+            final box = el.boundingBox;
+            final len = el.text.length > 0 ? el.text.length : 1;
+            final charW = box.width / len;
+            final subLeft = box.left + (foundIdx * charW);
+            final subW = q.length * charW;
+            final subBox = Rect.fromLTWH(subLeft, box.top, subW, box.height);
+
+            list.add(SearchOccurrence(
+              pageIndex: i,
+              ocrElement: el,
+              matchStartIndex: foundIdx,
+              matchLength: q.length,
+              subBoundingBox: subBox,
+            ));
+            start = foundIdx + math.max(1, q.length);
+          }
+        }
+      }
+
+      // 3. Regular Page Text / Notes
+      final pageText = _normalizeSearchText(p.textController.text);
+      if (pageText.isNotEmpty) {
+        int start = 0;
+        while (start < pageText.length) {
+          final foundIdx = pageText.indexOf(q, start);
+          if (foundIdx == -1) break;
+          list.add(SearchOccurrence(
+            pageIndex: i,
+            matchStartIndex: foundIdx,
+            matchLength: q.length,
+          ));
+          start = foundIdx + math.max(1, q.length);
+        }
+      }
+
+      return list;
+    }
+
+    final matches = <SearchOccurrence>[];
+    for (int i = 0; i < _pages.length; i++) {
+      matches.addAll(collectMatchesForPage(i));
     }
 
     setState(() {
-      _searchMatchedPageIndices = List.from(matches);
-      _currentSearchResultIndex = 0;
+      _allSearchMatches = matches;
+      _currentSearchMatchIndex = 0;
     });
 
-    if (matches.isNotEmpty) {
+    if (_allSearchMatches.isNotEmpty && _pageController.hasClients) {
       _pageController.animateToPage(
-        matches.first,
+        _allSearchMatches.first.pageIndex,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     }
 
-    // 2. Henüz taranmamış sayfa görsellerini OCR (Yapay Zeka) ile tarama
     final uncachedIndices = <int>[];
     for (int i = 0; i < _pages.length; i++) {
       if (!_pageOcrTextCache.containsKey(i)) {
@@ -2324,22 +2423,15 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         if (!_isSearching || _normalizeSearchText(_searchCtrl.text.trim()) != q) {
           break;
         }
-        final ocrText = await _getPageOcrText(idx);
-        if (ocrText.contains(q) && !matches.contains(idx)) {
-          matches.add(idx);
-          matches.sort();
-          if (mounted && _isSearching && _normalizeSearchText(_searchCtrl.text.trim()) == q) {
-            setState(() {
-              _searchMatchedPageIndices = List.from(matches);
-            });
-            if (_searchMatchedPageIndices.length == 1) {
-              _pageController.animateToPage(
-                idx,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-              );
-            }
+        await _getPageOcrText(idx);
+        if (mounted && _isSearching && _normalizeSearchText(_searchCtrl.text.trim()) == q) {
+          final updatedMatches = <SearchOccurrence>[];
+          for (int i = 0; i < _pages.length; i++) {
+            updatedMatches.addAll(collectMatchesForPage(i));
           }
+          setState(() {
+            _allSearchMatches = updatedMatches;
+          });
         }
       }
       if (mounted) {
@@ -2349,32 +2441,38 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   }
 
   void _nextSearchResult() {
-    if (_searchMatchedPageIndices.isEmpty) return;
+    if (_allSearchMatches.isEmpty) return;
     setState(() {
-      _currentSearchResultIndex = (_currentSearchResultIndex + 1) % _searchMatchedPageIndices.length;
+      _currentSearchMatchIndex = (_currentSearchMatchIndex + 1) % _allSearchMatches.length;
     });
-    _pageController.animateToPage(
-      _searchMatchedPageIndices[_currentSearchResultIndex],
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    final match = _allSearchMatches[_currentSearchMatchIndex];
+    if (_pageController.hasClients && _activePageIndex != match.pageIndex) {
+      _pageController.animateToPage(
+        match.pageIndex,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   void _prevSearchResult() {
-    if (_searchMatchedPageIndices.isEmpty) return;
+    if (_allSearchMatches.isEmpty) return;
     setState(() {
-      _currentSearchResultIndex = (_currentSearchResultIndex - 1 + _searchMatchedPageIndices.length) % _searchMatchedPageIndices.length;
+      _currentSearchMatchIndex = (_currentSearchMatchIndex - 1 + _allSearchMatches.length) % _allSearchMatches.length;
     });
-    _pageController.animateToPage(
-      _searchMatchedPageIndices[_currentSearchResultIndex],
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    final match = _allSearchMatches[_currentSearchMatchIndex];
+    if (_pageController.hasClients && _activePageIndex != match.pageIndex) {
+      _pageController.animateToPage(
+        match.pageIndex,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   Widget _buildTopSearchBar() {
-    final matchCount = _searchMatchedPageIndices.length;
-    final currentMatchDisplay = matchCount > 0 ? '${_currentSearchResultIndex + 1}/$matchCount' : '0/0';
+    final matchCount = _allSearchMatches.length;
+    final currentMatchDisplay = matchCount > 0 ? '${_currentSearchMatchIndex + 1}/$matchCount' : '0/0';
 
     return Row(
       children: [
@@ -2383,6 +2481,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         Expanded(
           child: TextField(
             controller: _searchCtrl,
+            focusNode: _searchFocusNode,
             autofocus: true,
             style: const TextStyle(color: Colors.white, fontSize: 15),
             decoration: const InputDecoration(
@@ -2398,48 +2497,45 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         if (_isOcrScanning) ...[
           const SizedBox(width: 6),
           const SizedBox(
-            width: 16,
-            height: 16,
+            width: 14,
+            height: 14,
             child: CircularProgressIndicator(
-              strokeWidth: 2.2,
+              strokeWidth: 2.0,
               color: Color(0xFF14B8A6),
             ),
           ),
           const SizedBox(width: 6),
         ],
-        if (_searchCtrl.text.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-            ),
-            child: Text(
-              currentMatchDisplay,
-              style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold),
-            ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
           ),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 26),
-            tooltip: 'Önceki Eşleşme',
-            onPressed: matchCount > 0 ? _prevSearchResult : null,
+          child: Text(
+            currentMatchDisplay,
+            style: const TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold),
           ),
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 26),
-            tooltip: 'Sonraki Eşleşme',
-            onPressed: matchCount > 0 ? _nextSearchResult : null,
-          ),
-        ],
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 26),
+          tooltip: 'Önceki Eşleşme',
+          onPressed: matchCount > 0 ? _prevSearchResult : null,
+        ),
+        IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 26),
+          tooltip: 'Sonraki Eşleşme',
+          onPressed: matchCount > 0 ? _nextSearchResult : null,
+        ),
         IconButton(
           icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 25),
           tooltip: 'Aramayı Kapat',
           onPressed: () {
             setState(() {
               _isSearching = false;
-              _searchCtrl.clear();
-              _searchMatchedPageIndices = [];
+              _allSearchMatches = [];
               _isOcrScanning = false;
             });
           },
@@ -2510,8 +2606,16 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                       onPressed: () {
                         setState(() {
                           _isSearching = true;
-                          _searchCtrl.clear();
-                          _searchMatchedPageIndices = [];
+                        });
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _searchFocusNode.requestFocus();
+                          if (_searchCtrl.text.isNotEmpty) {
+                            _searchCtrl.selection = TextSelection(
+                              baseOffset: 0,
+                              extentOffset: _searchCtrl.text.length,
+                            );
+                            _performSearch(_searchCtrl.text);
+                          }
                         });
                       },
                     ),
@@ -2857,9 +2961,42 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildTextBoxOverlay(TextBoxOverlay tb, PageData pageData) {
     final isSelected = _selectedTextBoxId == tb.id;
-    final isMatch = _isSearching &&
-        _searchCtrl.text.trim().isNotEmpty &&
-        _normalizeSearchText(tb.text).contains(_normalizeSearchText(_searchCtrl.text.trim()));
+    final matchesForThisBox = _isSearching && _searchCtrl.text.trim().isNotEmpty
+        ? _allSearchMatches.where((m) => m.textBox == tb).toList()
+        : <SearchOccurrence>[];
+
+    final hasMatch = matchesForThisBox.isNotEmpty;
+    final isCurrentActiveMatch = hasMatch && matchesForThisBox.any((m) => _allSearchMatches.indexOf(m) == _currentSearchMatchIndex);
+
+    Color borderColor;
+    Color bgColor;
+    List<BoxShadow>? boxShadow;
+
+    if (isCurrentActiveMatch) {
+      borderColor = const Color(0xFFDC2626);
+      bgColor = const Color(0xFFEF4444).withValues(alpha: 0.45);
+      boxShadow = [
+        BoxShadow(
+          color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+          blurRadius: 10,
+          spreadRadius: 2,
+        ),
+      ];
+    } else if (hasMatch) {
+      borderColor = const Color(0xFFF59E0B);
+      bgColor = const Color(0xFFFFE600).withValues(alpha: 0.35);
+      boxShadow = [
+        BoxShadow(
+          color: const Color(0xFFFFE600).withValues(alpha: 0.3),
+          blurRadius: 8,
+          spreadRadius: 1,
+        ),
+      ];
+    } else {
+      borderColor = isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.4);
+      bgColor = AppColors.surfaceLighter.withOpacity(0.9);
+      boxShadow = null;
+    }
 
     return Positioned(
       left: tb.position.dx,
@@ -2890,18 +3027,12 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
               height: tb.size.height,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: isMatch ? const Color(0xFFF59E0B) : (isSelected ? Colors.blue : Colors.grey.withValues(alpha: 0.4)),
-                  width: isMatch ? 2.5 : (isSelected ? 2 : 1),
+                  color: borderColor,
+                  width: (isCurrentActiveMatch || hasMatch) ? 2.5 : (isSelected ? 2 : 1),
                 ),
                 borderRadius: BorderRadius.circular(AppRadius.small),
-                color: isMatch ? const Color(0xFFFFE600).withValues(alpha: 0.35) : AppColors.surfaceLighter.withOpacity(0.9),
-                boxShadow: isMatch ? [
-                  BoxShadow(
-                    color: const Color(0xFFFFE600).withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  ),
-                ] : null,
+                color: bgColor,
+                boxShadow: boxShadow,
               ),
               padding: const EdgeInsets.all(4),
               child: IgnorePointer(
