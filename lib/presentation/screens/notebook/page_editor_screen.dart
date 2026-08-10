@@ -2706,6 +2706,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
         ),
       ),
     );
+  }
+
   Widget _buildTextBoxOverlay(TextBoxOverlay tb, PageData pageData) {
     final isSelected = _selectedTextBoxId == tb.id;
     final isMatch = _isSearching &&
