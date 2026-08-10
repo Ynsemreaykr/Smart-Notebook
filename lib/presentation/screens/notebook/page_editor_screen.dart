@@ -1788,10 +1788,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                             } else if (content is Circle) {
                               final sp = content.startPoint;
                               final ep = content.endPoint;
-                              if (sp != null && ep != null) {
-                                final bothInside = selRect.contains(sp) && selRect.contains(ep);
-                                if (!bothInside) survivingContents.add(content);
-                              }
+                              final bothInside = selRect.contains(sp) && selRect.contains(ep);
+                              if (!bothInside) survivingContents.add(content);
                             } else if (content is ArrowContent) {
                               final sp = content.start;
                               final ep = content.end;
