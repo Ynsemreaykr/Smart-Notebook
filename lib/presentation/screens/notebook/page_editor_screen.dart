@@ -2325,7 +2325,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: _isSearching
               ? _buildTopSearchBar()
               : Row(
@@ -2334,8 +2334,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 22),
                       tooltip: 'Geri Dön',
                       onPressed: () async {
                         final shouldPop = await _onBackPressed();
@@ -2349,8 +2349,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.undo_rounded, color: Colors.white70, size: 21),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.undo_rounded, color: Colors.white70, size: 23),
                       tooltip: 'Geri Al',
                       onPressed: () {
                         _pages[_activePageIndex].controller.undo();
@@ -2362,8 +2362,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.redo_rounded, color: Colors.white70, size: 21),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.redo_rounded, color: Colors.white70, size: 23),
                       tooltip: 'İleri Al',
                       onPressed: () {
                         _pages[_activePageIndex].controller.redo();
@@ -2375,8 +2375,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 22),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 24),
                       tooltip: 'Kelime Ara (Ctrl+F)',
                       onPressed: () {
                         setState(() {
@@ -2393,11 +2393,11 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
                       icon: Icon(
                         _showShortcut ? Icons.style_rounded : Icons.style_outlined,
                         color: _showShortcut ? const Color(0xFF14B8A6) : Colors.white70,
-                        size: 21,
+                        size: 23,
                       ),
                       tooltip: 'Görsel & Bilgi Kartları',
                       onPressed: () => setState(() => _showShortcut = !_showShortcut),
@@ -2407,11 +2407,11 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
                       icon: Icon(
                         _showCalculator ? Icons.calculate_rounded : Icons.calculate_outlined,
                         color: _showCalculator ? const Color(0xFF14B8A6) : Colors.white70,
-                        size: 21,
+                        size: 23,
                       ),
                       tooltip: 'Hesap Makinesi',
                       onPressed: () => setState(() => _showCalculator = !_showCalculator),
@@ -2421,8 +2421,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 21),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white70, size: 23),
                       tooltip: 'PDF Olarak Paylaş',
                       onPressed: _exportAsPdf,
                     ),
@@ -2431,8 +2431,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-                      icon: const Icon(Icons.fullscreen_rounded, color: Color(0xFF14B8A6), size: 24),
+                      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                      icon: const Icon(Icons.fullscreen_rounded, color: Color(0xFF14B8A6), size: 25),
                       tooltip: 'Tam Ekran (Barları Gizle)',
                       onPressed: () => setState(() => _showUI = false),
                     ),
