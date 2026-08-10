@@ -1472,16 +1472,41 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
               // 5. Drawing Board with stylus button eraser, eraser cursor & area eraser tracking
               Listener(
-                onPointerMove: (event) {
+                onPointerHover: (event) {
                   if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
-                    final isStylusButton = (event.buttons & kSecondaryMouseButton != 0) ||
+                    final isStylusButton = (event.buttons > 1) ||
+                                           (event.buttons & kSecondaryButton != 0) ||
+                                           (event.buttons & kSecondaryMouseButton != 0) ||
                                            (event.buttons & kPrimaryStylusButton != 0) ||
                                            (event.buttons & kSecondaryStylusButton != 0) ||
-                                           (event.kind == ui.PointerDeviceKind.invertedStylus);
+                                           (event.buttons & kTertiaryButton != 0) ||
+                                           (event.kind == ui.PointerDeviceKind.invertedStylus) ||
+                                           (event.kind == ui.PointerDeviceKind.stylus && event.buttons != kPrimaryButton && event.buttons != 0);
                     if (isStylusButton && _activeTool != 'Eraser') {
                       _previousToolBeforeStylus = _activeTool;
-                      _activeTool = 'Eraser';
-                      _applyDrawingToolToActivePage();
+                      setState(() {
+                        _activeTool = 'Eraser';
+                        _applyDrawingToolToActivePage();
+                      });
+                    }
+                  }
+                },
+                onPointerMove: (event) {
+                  if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
+                    final isStylusButton = (event.buttons > 1) ||
+                                           (event.buttons & kSecondaryButton != 0) ||
+                                           (event.buttons & kSecondaryMouseButton != 0) ||
+                                           (event.buttons & kPrimaryStylusButton != 0) ||
+                                           (event.buttons & kSecondaryStylusButton != 0) ||
+                                           (event.buttons & kTertiaryButton != 0) ||
+                                           (event.kind == ui.PointerDeviceKind.invertedStylus) ||
+                                           (event.kind == ui.PointerDeviceKind.stylus && event.buttons != kPrimaryButton && event.buttons != 0);
+                    if (isStylusButton && _activeTool != 'Eraser') {
+                      _previousToolBeforeStylus = _activeTool;
+                      setState(() {
+                        _activeTool = 'Eraser';
+                        _applyDrawingToolToActivePage();
+                      });
                     }
                     if (_activeTool == 'Eraser') {
                       setState(() => _eraserCursorPosition = event.localPosition);
@@ -1490,14 +1515,20 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 },
                 onPointerDown: (event) {
                   if (_currentMode == EditorMode.drawing && index == _activePageIndex) {
-                    final isStylusButton = (event.buttons & kSecondaryMouseButton != 0) ||
+                    final isStylusButton = (event.buttons > 1) ||
+                                           (event.buttons & kSecondaryButton != 0) ||
+                                           (event.buttons & kSecondaryMouseButton != 0) ||
                                            (event.buttons & kPrimaryStylusButton != 0) ||
                                            (event.buttons & kSecondaryStylusButton != 0) ||
-                                           (event.kind == ui.PointerDeviceKind.invertedStylus);
+                                           (event.buttons & kTertiaryButton != 0) ||
+                                           (event.kind == ui.PointerDeviceKind.invertedStylus) ||
+                                           (event.kind == ui.PointerDeviceKind.stylus && event.buttons != kPrimaryButton && event.buttons != 0);
                     if (isStylusButton && _activeTool != 'Eraser') {
                       _previousToolBeforeStylus = _activeTool;
-                      _activeTool = 'Eraser';
-                      _applyDrawingToolToActivePage();
+                      setState(() {
+                        _activeTool = 'Eraser';
+                        _applyDrawingToolToActivePage();
+                      });
                     }
                     if (!_toolbarPinned && _toolbarVisible) {
                       setState(() => _toolbarVisible = false);
