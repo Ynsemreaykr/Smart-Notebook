@@ -1705,36 +1705,6 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
             : (currentImgIndex == 0 ? note.note : '');
         final overlaySections = _parseSections(imageNoteText);
 
-        void nextImageOrCard() {
-          if (currentImgIndex < totalImages - 1) {
-            _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-            return;
-          }
-          final cardIdx = folderNotes.indexWhere((n) => n.id == note.id);
-          if (cardIdx != -1 && cardIdx < folderNotes.length - 1) {
-            final nextNote = folderNotes[cardIdx + 1];
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => PhotoNoteViewerScreen(noteId: nextNote.id)),
-            );
-          }
-        }
-
-        void prevImageOrCard() {
-          if (currentImgIndex > 0) {
-            _pageController.previousPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-            return;
-          }
-          final cardIdx = folderNotes.indexWhere((n) => n.id == note.id);
-          if (cardIdx > 0) {
-            final prevNote = folderNotes[cardIdx - 1];
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => PhotoNoteViewerScreen(noteId: prevNote.id)),
-            );
-          }
-        }
-
         return Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
