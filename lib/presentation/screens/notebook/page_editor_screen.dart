@@ -712,7 +712,6 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   /// Change the paper type of the currently-active page
   void _showChangePaperTypeSheet() {
     if (_pages.isEmpty) return;
-    final currentType = _pages[_activePageIndex].paperType;
 
     showModalBottomSheet(
       context: context,
@@ -1333,8 +1332,6 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                             child: LayoutBuilder(
                               builder: (context, constraints) {
                                 final containerSize = Size(constraints.maxWidth, constraints.maxHeight);
-                                final currentQuery = _isSearching ? _normalizeSearchText(_searchCtrl.text.trim()) : '';
-                                final elements = _pageOcrElementsCache[index] ?? [];
                                 final highlightBoxes = <Widget>[];
 
                                 final pageMatches = _isSearching
