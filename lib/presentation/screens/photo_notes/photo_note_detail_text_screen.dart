@@ -642,8 +642,10 @@ class _PhotoNoteDetailTextScreenState extends State<PhotoNoteDetailTextScreen> {
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
-  }
+  },
+);
+}
 }
