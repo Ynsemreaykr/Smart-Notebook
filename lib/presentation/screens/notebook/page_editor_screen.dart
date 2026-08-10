@@ -2572,7 +2572,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildTopAppBar() {
     return Container(
-      color: Colors.black.withValues(alpha: 0.85),
+      color: const Color(0xFF0F172A).withValues(alpha: 0.55),
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -3277,7 +3277,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   Widget _buildBottomBar() {
     return Container(
-      color: const Color(0xFF0F172A).withValues(alpha: 0.94),
+      color: const Color(0xFF0F172A).withValues(alpha: 0.55),
       child: SafeArea(
         top: false,
         child: Container(
@@ -3432,7 +3432,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
           duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.94),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.65),
             borderRadius: BorderRadius.circular(_isFloatingBarExpanded ? 24 : 26),
             border: Border.all(
               color: isDrawing ? const Color(0xFF14B8A6) : Colors.white24,
