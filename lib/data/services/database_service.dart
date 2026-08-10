@@ -21,17 +21,35 @@ class DatabaseService {
     Hive.registerAdapter(CalendarEventAdapter());
     Hive.registerAdapter(NoteAdapter());
 
-    // Open boxes
-    await Hive.openBox<Book>(booksBox);
-    await Hive.openBox<NotePage>(pagesBox);
-    await Hive.openBox<CalendarEvent>(eventsBox);
-    await Hive.openBox<Note>(notesBox);
-    await Hive.openBox<Note>('voice_notes');
-    await Hive.openBox('settings');
-    await Hive.openBox(habitsBox);
-    await Hive.openBox('planner_tasks');
-    await Hive.openBox('plans');
-    await Hive.openBox('photo_notes');
+    // Open boxes safely without hanging
+    await _safeOpenBox<Book>(booksBox);
+    await _safeOpenBox<NotePage>(pagesBox);
+    await _safeOpenBox<CalendarEvent>(eventsBox);
+    await _safeOpenBox<Note>(notesBox);
+    await _safeOpenBox<Note>('voice_notes');
+    await _safeOpenBox('settings');
+    await _safeOpenBox(habitsBox);
+    await _safeOpenBox('planner_tasks');
+    await _safeOpenBox('plans');
+    await _safeOpenBox('photo_notes');
+  }
+
+  static Future<Box<T>> _safeOpenBox<T>(String name) async {
+    try {
+      return await Hive.openBox<T>(name).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      print('Warning: Box $name failed to open normally: $e. Recovering...');
+      try {
+        if (Hive.isBoxOpen(name)) {
+          return Hive.box<T>(name);
+        }
+        await Hive.deleteBoxFromDisk(name);
+        return await Hive.openBox<T>(name);
+      } catch (err) {
+        print('Critical: Box $name recovery failed: $err');
+        return await Hive.openBox<T>('${name}_safe');
+      }
+    }
   }
 
   static Box<Book> getBooksBox() => Hive.box<Book>(booksBox);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ class BookProvider extends ChangeNotifier {
   final BookRepository _bookRepository = BookRepository();
   final PageRepository _pageRepository = PageRepository();
   final Uuid _uuid = const Uuid();
+  Future<void>? _pdfImportTask;
 
   List<Book> _books = [];
   bool _isLoading = false;
@@ -146,8 +148,29 @@ class BookProvider extends ChangeNotifier {
     return book;
   }
 
-  /// Import a PDF as a new Book containing a notebook page for each PDF page
+  /// Import a PDF as a new Book containing a notebook page for each PDF page (Sequential & Memory Safe)
   Future<Book> importPdf(File file, [String? title]) async {
+    final previousTask = _pdfImportTask;
+    final completer = Completer<Book>();
+    
+    _pdfImportTask = () async {
+      if (previousTask != null) {
+        try {
+          await previousTask;
+        } catch (_) {}
+      }
+      try {
+        final result = await _internalImportPdf(file, title);
+        completer.complete(result);
+      } catch (e) {
+        completer.completeError(e);
+      }
+    }();
+    
+    return completer.future;
+  }
+
+  Future<Book> _internalImportPdf(File file, [String? title]) async {
     final now = DateTime.now();
     final bookTitle = title ?? 'PDF Kitap';
     
@@ -165,8 +188,6 @@ class BookProvider extends ChangeNotifier {
         final b64 = base64Encode(pngBytes);
         
         final pageId = _uuid.v4();
-        // Her PDF sayfası backgroundImageBase64 olarak kaydedilir
-        // Böylece çizim editoründe arka plan olarak görünür
         final pageData = {
           'text': '',
           'drawing': [],
@@ -196,6 +217,8 @@ class BookProvider extends ChangeNotifier {
         
         await _pageRepository.addPage(notePage);
         pageIndex++;
+        // Give event loop time to breathe and prevent RAM spikes
+        await Future.delayed(const Duration(milliseconds: 15));
       }
     } catch (e) {
       debugPrint("Error rasterizing PDF: $e");
