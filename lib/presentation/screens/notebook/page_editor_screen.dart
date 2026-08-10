@@ -726,12 +726,12 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Kağıt Tipini Değiştir',
+                  'Sayfa Seçenekleri',
                   style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Sayfa ${_activePageIndex + 1} — şu anki tip: ${currentType == 'lined' ? 'Çizgili' : currentType == 'grid' ? 'Kareli' : 'Boş'}',
+                  'Sayfa ${_activePageIndex + 1}/${_pages.length} — Tipi: ${currentType == 'lined' ? 'Çizgili' : currentType == 'grid' ? 'Kareli' : 'Boş'}',
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
@@ -766,6 +766,39 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                       },
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+                const Divider(color: Colors.white12, height: 1),
+                const SizedBox(height: 14),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _confirmDeletePage();
+                    },
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Bu Sayfayı Sil',
+                            style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -3213,14 +3246,6 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                     icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF14B8A6), size: 24),
                     tooltip: 'Sayfa Ekle',
                     onPressed: _addPage,
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
-                    tooltip: 'Sayfayı Sil',
-                    onPressed: _confirmDeletePage,
                   ),
                 ],
               ),
