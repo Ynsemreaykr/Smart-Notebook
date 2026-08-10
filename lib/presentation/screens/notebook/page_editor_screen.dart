@@ -731,7 +731,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Sayfa ${_activePageIndex + 1}/${_pages.length} — Tipi: ${currentType == 'lined' ? 'Çizgili' : currentType == 'grid' ? 'Kareli' : 'Boş'}',
+                  'Sayfa ${_activePageIndex + 1}/${_pages.length}',
                   style: const TextStyle(color: Colors.white54, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
@@ -3223,7 +3223,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
                                   ? '≡ çizgili'
                                   : _pages[_activePageIndex].paperType == 'grid'
                                       ? '# kareli'
-                                      : '□ boş')
+                                      : '')
                               : '',
                           style: const TextStyle(color: Colors.white38, fontSize: 8),
                         ),
