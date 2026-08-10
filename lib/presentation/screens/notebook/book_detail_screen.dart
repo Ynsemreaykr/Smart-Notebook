@@ -27,9 +27,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   final Set<String> _selectedPageIds = {};
   final TextEditingController _searchCtrl = TextEditingController();
   String _searchQuery = '';
-  static bool _showShortcutGlobal = false;
-  bool get _showShortcut => _showShortcutGlobal;
-  set _showShortcut(bool val) => _showShortcutGlobal = val;
+  static bool _showShortcut = false;
 
   @override
   void initState() {

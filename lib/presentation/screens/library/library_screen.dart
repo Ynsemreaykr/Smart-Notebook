@@ -27,9 +27,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   
   // For floating book shortcut
   Book? _shortcutBook;
-  static bool _showShortcutGlobal = false;
-  bool get _showShortcut => _showShortcutGlobal;
-  set _showShortcut(bool val) => _showShortcutGlobal = val;
+  static bool _showShortcut = false;
 
   @override
   void initState() {
