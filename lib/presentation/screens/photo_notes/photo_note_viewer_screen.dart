@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
@@ -118,124 +119,300 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
       secController.selection = TextSelection.collapsed(offset: existingText.length);
     }
 
+    final searchController = TextEditingController();
+    final searchFocusNode = FocusNode();
+
     showGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Tam Ekran Not',
       pageBuilder: (ctx, anim1, anim2) {
-        return Scaffold(
-          backgroundColor: const Color(0xFF0F172A),
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF1E293B),
-            elevation: 2,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-              onPressed: () {
-                _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
-                Navigator.pop(ctx);
-              },
-            ),
-            title: Text(
-              'Not Bölümü ${sectionIndex + 1} (Tam Ekran)',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            actions: [
-              TextButton.icon(
-                icon: const Icon(Icons.check_rounded, color: Color(0xFF14B8A6), size: 20),
-                label: const Text('Tamam', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 14)),
-                onPressed: () {
-                  _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
-                  Navigator.pop(ctx);
-                },
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              // Özel Karakterler Barı (Special Characters Toolbar)
-              Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1E293B),
-                  border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
-                ),
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _quickSymbols.length,
-                  itemBuilder: (context, qIndex) {
-                    final sym = _quickSymbols[qIndex];
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: InkWell(
-                        onTap: () {
-                          final text = secController.text;
-                          final selection = secController.selection;
-                          int start = selection.start;
-                          int end = selection.end;
-                          if (start < 0 || start > text.length) start = text.length;
-                          if (end < 0 || end > text.length) end = text.length;
+        bool isSearching = false;
+        List<int> matches = [];
+        int currentMatchIndex = -1;
 
-                          final newText = text.replaceRange(start, end, sym);
-                          secController.value = TextEditingValue(
-                            text: newText,
-                            selection: TextSelection.collapsed(offset: start + sym.length),
-                          );
-                          _updateSectionText(imageIndex, sectionIndex, newText, note, provider);
+        void highlightMatch(StateSetter setDialogState) {
+          if (matches.isEmpty || currentMatchIndex < 0 || currentMatchIndex >= matches.length) return;
+          final start = matches[currentMatchIndex];
+          final queryLen = searchController.text.length;
+          secController.selection = TextSelection(
+            baseOffset: start,
+            extentOffset: start + queryLen,
+          );
+        }
+
+        void performSearch(String query, StateSetter setDialogState) {
+          if (query.trim().isEmpty) {
+            setDialogState(() {
+              matches = [];
+              currentMatchIndex = -1;
+            });
+            return;
+          }
+          final fullText = secController.text.toLowerCase();
+          final q = query.toLowerCase();
+          final list = <int>[];
+          int start = 0;
+          while (start < fullText.length) {
+            final idx = fullText.indexOf(q, start);
+            if (idx == -1) break;
+            list.add(idx);
+            start = idx + q.length;
+          }
+          setDialogState(() {
+            matches = list;
+            if (list.isNotEmpty) {
+              currentMatchIndex = 0;
+              highlightMatch(setDialogState);
+            } else {
+              currentMatchIndex = -1;
+            }
+          });
+        }
+
+        void toggleSearch(StateSetter setDialogState) {
+          setDialogState(() {
+            isSearching = !isSearching;
+            if (!isSearching) {
+              searchController.clear();
+              matches = [];
+              currentMatchIndex = -1;
+            }
+          });
+          if (isSearching) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              searchFocusNode.requestFocus();
+              if (searchController.text.isNotEmpty) {
+                searchController.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: searchController.text.length,
+                );
+                performSearch(searchController.text, setDialogState);
+              }
+            });
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final matchCount = matches.length;
+            final currentPos = currentMatchIndex >= 0 ? currentMatchIndex + 1 : 0;
+
+            return CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.keyF, control: true): () => toggleSearch(setDialogState),
+                const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () => toggleSearch(setDialogState),
+              },
+              child: Focus(
+                autofocus: true,
+                child: Scaffold(
+                  backgroundColor: const Color(0xFF0F172A),
+                  appBar: AppBar(
+                    backgroundColor: const Color(0xFF1E293B),
+                    elevation: 2,
+                    leading: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                      onPressed: () {
+                        _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                    title: Text(
+                      'Not Bölümü ${sectionIndex + 1} (Tam Ekran)',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    actions: [
+                      // Not İçi Arama Butonu (Ctrl+F)
+                      IconButton(
+                        icon: Icon(
+                          isSearching ? Icons.search_off_rounded : Icons.search_rounded,
+                          color: isSearching ? const Color(0xFF14B8A6) : Colors.white70,
+                          size: 22,
+                        ),
+                        tooltip: 'Not İçi Ara (Ctrl+F)',
+                        onPressed: () => toggleSearch(setDialogState),
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.check_rounded, color: Color(0xFF14B8A6), size: 20),
+                        label: const Text('Tamam', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 14)),
+                        onPressed: () {
+                          _updateSectionText(imageIndex, sectionIndex, secController.text, note, provider);
+                          Navigator.pop(ctx);
                         },
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                      ),
+                    ],
+                  ),
+                  body: Column(
+                    children: [
+                      // Arama Çubuğu
+                      if (isSearching)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF1E293B),
+                            border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.5)),
                           ),
-                          child: Text(
-                            sym,
-                            style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.search_rounded, color: Color(0xFF14B8A6), size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: searchController,
+                                  focusNode: searchFocusNode,
+                                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  decoration: const InputDecoration(
+                                    hintText: 'Not içinde ara... (Ctrl+F)',
+                                    hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(vertical: 6),
+                                  ),
+                                  onChanged: (val) => performSearch(val, setDialogState),
+                                ),
+                              ),
+                              if (searchController.text.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: Text(
+                                    matchCount > 0 ? '$currentPos/$matchCount' : '0/0',
+                                    style: TextStyle(
+                                      color: matchCount > 0 ? const Color(0xFF14B8A6) : Colors.redAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 22),
+                                tooltip: 'Önceki Eşleşme',
+                                onPressed: matchCount > 0
+                                    ? () {
+                                        setDialogState(() {
+                                          currentMatchIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
+                                          highlightMatch(setDialogState);
+                                        });
+                                      }
+                                    : null,
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+                                tooltip: 'Sonraki Eşleşme',
+                                onPressed: matchCount > 0
+                                    ? () {
+                                        setDialogState(() {
+                                          currentMatchIndex = (currentMatchIndex + 1) % matches.length;
+                                          highlightMatch(setDialogState);
+                                        });
+                                      }
+                                    : null,
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+                                tooltip: 'Aramayı Kapat',
+                                onPressed: () => toggleSearch(setDialogState),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                      // Özel Karakterler Barı (Special Characters Toolbar)
+                      Container(
+                        height: 42,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF1E293B),
+                          border: Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.2)),
+                        ),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _quickSymbols.length,
+                          itemBuilder: (context, qIndex) {
+                            final sym = _quickSymbols[qIndex];
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: InkWell(
+                                onTap: () {
+                                  final text = secController.text;
+                                  final selection = secController.selection;
+                                  int start = selection.start;
+                                  int end = selection.end;
+                                  if (start < 0 || start > text.length) start = text.length;
+                                  if (end < 0 || end > text.length) end = text.length;
+
+                                  final newText = text.replaceRange(start, end, sym);
+                                  secController.value = TextEditingValue(
+                                    text: newText,
+                                    selection: TextSelection.collapsed(offset: start + sym.length),
+                                  );
+                                  _updateSectionText(imageIndex, sectionIndex, newText, note, provider);
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
+                                  ),
+                                  child: Text(
+                                    sym,
+                                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+
+                      // Full Screen Main TextField
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: TextField(
+                            controller: secController,
+                            maxLines: null,
+                            expands: true,
+                            autofocus: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
+                            decoration: InputDecoration(
+                              hintText: 'Not bölümü ${sectionIndex + 1} için notunuzu rahatça buraya yazın...',
+                              hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                              filled: true,
+                              fillColor: Colors.black26,
+                              contentPadding: const EdgeInsets.all(16),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: Colors.white12),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
+                              ),
+                            ),
+                            onChanged: (val) {
+                              _updateSectionText(imageIndex, sectionIndex, val, note, provider);
+                            },
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-
-              // Full Screen Main TextField
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    controller: secController,
-                    maxLines: null,
-                    expands: true,
-                    autofocus: true,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.5),
-                    decoration: InputDecoration(
-                      hintText: 'Not bölümü ${sectionIndex + 1} için notunuzu rahatça buraya yazın...',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                      filled: true,
-                      fillColor: Colors.black26,
-                      contentPadding: const EdgeInsets.all(16),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.white12),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF14B8A6), width: 1.5),
-                      ),
-                    ),
-                    onChanged: (val) {
-                      _updateSectionText(imageIndex, sectionIndex, val, note, provider);
-                    },
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
