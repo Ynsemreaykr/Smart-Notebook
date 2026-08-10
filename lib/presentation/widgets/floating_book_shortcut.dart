@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'flip_card_widget.dart';
+import 'move_or_copy_modal.dart';
 import '../../application/providers/photo_note_provider.dart';
 import '../../domain/models/photo_note.dart';
 import '../theme/app_theme.dart';
@@ -416,7 +417,19 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       onSelected: (val) {
-                        if (val == 'add_image') {
+                        if (val == 'move_copy') {
+                          showMoveOrCopyCardModal(
+                            context: context,
+                            note: note,
+                            imageIndex: index,
+                            onSuccess: () {
+                              setState(() {
+                                _selectedPhotoNote = null;
+                                _previewImageIndex = null;
+                              });
+                            },
+                          );
+                        } else if (val == 'add_image') {
                           _pickAndAddExtraImage(note);
                         } else if (val == 'replace_image') {
                           _showReplaceImagePicker(context, note, index);
@@ -429,6 +442,16 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                         }
                       },
                       itemBuilder: (ctx) => [
+                        const PopupMenuItem(
+                          value: 'move_copy',
+                          child: Row(
+                            children: [
+                              Icon(Icons.drive_file_move_rounded, color: Color(0xFFF59E0B), size: 16),
+                              SizedBox(width: 8),
+                              Text('Başka Üniteye Taşı / Kopyala', style: TextStyle(color: Colors.white, fontSize: 12)),
+                            ],
+                          ),
+                        ),
                         const PopupMenuItem(
                           value: 'add_image',
                           child: Row(
@@ -1830,10 +1853,47 @@ class _FloatingBookShortcutState extends State<FloatingBookShortcut>
                                   Positioned(
                                     top: 0,
                                     right: 0,
-                                    child: Icon(
-                                      Icons.more_vert_rounded,
-                                      size: 16,
-                                      color: Colors.white.withValues(alpha: 0.8),
+                                    child: PopupMenuButton<String>(
+                                      icon: Icon(
+                                        Icons.more_vert_rounded,
+                                        size: 16,
+                                        color: Colors.white.withValues(alpha: 0.9),
+                                      ),
+                                      color: const Color(0xFF1E293B),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                      onSelected: (val) {
+                                        if (val == 'move_copy') {
+                                          showMoveOrCopyCardModal(
+                                            context: context,
+                                            note: card,
+                                          );
+                                        } else if (val == 'delete') {
+                                          _confirmDeleteCard(context, card, provider);
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        const PopupMenuItem(
+                                          value: 'move_copy',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.drive_file_move_rounded, color: Color(0xFFF59E0B), size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Taşı / Kopyala', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                        const PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 16),
+                                              SizedBox(width: 8),
+                                              Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                   Center(

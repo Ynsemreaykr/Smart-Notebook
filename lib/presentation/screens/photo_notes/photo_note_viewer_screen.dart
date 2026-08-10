@@ -14,6 +14,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/services/wakelock_helper.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../widgets/flip_card_widget.dart';
+import '../../widgets/move_or_copy_modal.dart';
 import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_detail_text_screen.dart';
 
@@ -1857,7 +1858,13 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
                               color: const Color(0xFF1E293B),
                               onSelected: (val) {
-                                if (val == 'add_image') {
+                                if (val == 'move_copy') {
+                                  showMoveOrCopyCardModal(
+                                    context: context,
+                                    note: note,
+                                    imageIndex: currentImgIndex,
+                                  );
+                                } else if (val == 'add_image') {
                                   _pickAndAddExtraImage(note);
                                 } else if (val == 'replace_image') {
                                   _showReplaceImagePicker(context, note, currentImgIndex);
@@ -1868,6 +1875,16 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                 }
                               },
                               itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'move_copy',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.drive_file_move_rounded, color: Color(0xFFF59E0B), size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Başka Üniteye Taşı / Kopyala', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
                                 const PopupMenuItem(
                                   value: 'add_image',
                                   child: Row(
