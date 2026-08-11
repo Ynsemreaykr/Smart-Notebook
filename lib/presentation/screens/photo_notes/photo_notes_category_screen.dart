@@ -820,7 +820,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
   void _openCategoryFlashcardsSheet(BuildContext context) {
     String? selectedFilterGroup;
-    final Set<String> collapsedGroups = {};
+    Set<String>? collapsedGroups;
 
     showModalBottomSheet(
       context: context,
@@ -833,11 +833,12 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             final groupedFlashcards = provider.getGroupedFlashcardsForCategory(widget.category);
             final totalFlashcards = groupedFlashcards.values.fold<int>(0, (sum, list) => sum + list.length);
 
+            // Default all groups to collapsed when sheet first opens
+            collapsedGroups ??= Set.from(groupedFlashcards.keys);
+
             final displayEntries = selectedFilterGroup == null
                 ? groupedFlashcards.entries.toList()
                 : groupedFlashcards.entries.where((e) => e.key == selectedFilterGroup).toList();
-
-            final allCollapsed = collapsedGroups.length >= groupedFlashcards.length;
 
             return Container(
               height: MediaQuery.of(context).size.height * 0.85,
@@ -973,7 +974,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                     ),
                   const SizedBox(height: 10),
 
-                  // Action Buttons Row
+                  // Action Buttons Row (Add Flashcard Button)
                   Row(
                     children: [
                       Expanded(
@@ -991,28 +992,6 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                           },
                         ),
                       ),
-                      if (groupedFlashcards.length > 1) ...[
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: const BorderSide(color: Colors.white24),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          ),
-                          icon: Icon(allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded, size: 16, color: Colors.white70),
-                          label: Text(allCollapsed ? 'Aç' : 'Daralt', style: const TextStyle(fontSize: 12)),
-                          onPressed: () {
-                            setSheetState(() {
-                              if (allCollapsed) {
-                                collapsedGroups.clear();
-                              } else {
-                                collapsedGroups.addAll(groupedFlashcards.keys);
-                              }
-                            });
-                          },
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -1091,7 +1070,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                           borderRadius: BorderRadius.circular(AppRadius.medium),
                                           child: AnimatedContainer(
                                             duration: const Duration(milliseconds: 200),
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                             decoration: BoxDecoration(
                                               color: isHovering
                                                   ? const Color(0xFF14B8A6).withValues(alpha: 0.35)

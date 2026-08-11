@@ -1146,6 +1146,8 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 ? 'Sayfadaki Tüm Görseller'
                 : (_customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları');
 
+            bool isGroupExpanded = false;
+
             return Container(
               height: MediaQuery.of(context).size.height * 0.7,
               decoration: const BoxDecoration(
@@ -1253,81 +1255,102 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Group Header Card
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.folder_rounded, color: Color(0xFF14B8A6), size: 20),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            groupHeaderTitle,
-                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                                          ),
-                                        ],
-                                      ),
-                                      Row(
-                                        children: [
-                                          Text(
-                                            '${noteFlashcards.length} Kart',
-                                            style: const TextStyle(color: Colors.white60, fontSize: 12),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          IconButton(
-                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                            padding: EdgeInsets.zero,
-                                            icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 16),
-                                            onPressed: () {
-                                              Navigator.pop(ctx);
-                                              _editAccordionTitle(index ?? 0);
-                                            },
-                                          ),
-                                          IconButton(
-                                            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                            padding: EdgeInsets.zero,
-                                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 20),
-                                            onPressed: () {
-                                              Navigator.pop(ctx);
-                                              _openFlashcardsSheet(context, note);
-                                            },
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                // 2-Column Cards Grid
-                                GridView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    crossAxisSpacing: 10,
-                                    mainAxisSpacing: 10,
-                                    childAspectRatio: 1.2,
-                                  ),
-                                  itemCount: noteFlashcards.length,
-                                  itemBuilder: (context, fcIndex) {
-                                    final card = noteFlashcards[fcIndex];
-                                    return FlipCardWidget(
-                                      flashcard: card,
-                                      onOptionsTap: () {
-                                        Navigator.pop(ctx);
-                                        _showNoteFlashcardOptions(context, card, note);
-                                      },
-                                    );
+                                // Thin Sleek Group Header Card (Collapsible)
+                                InkWell(
+                                  onTap: () {
+                                    setSheetState(() {
+                                      isGroupExpanded = !isGroupExpanded;
+                                    });
                                   },
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0F172A),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              isGroupExpanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+                                              color: const Color(0xFF14B8A6),
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              groupHeaderTitle,
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                            ),
+                                          ],
+                                        ),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white10,
+                                                borderRadius: BorderRadius.circular(10),
+                                              ),
+                                              child: Text(
+                                                '${noteFlashcards.length}',
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            IconButton(
+                                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                              padding: EdgeInsets.zero,
+                                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 15),
+                                              onPressed: () {
+                                                Navigator.pop(ctx);
+                                                _editAccordionTitle(index ?? 0);
+                                              },
+                                            ),
+                                            IconButton(
+                                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                              padding: EdgeInsets.zero,
+                                              icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 18),
+                                              onPressed: () {
+                                                Navigator.pop(ctx);
+                                                _openFlashcardsSheet(context, note);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
+                                if (isGroupExpanded) ...[
+                                  const SizedBox(height: 10),
+
+                                  // 2-Column Cards Grid
+                                  GridView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 10,
+                                      mainAxisSpacing: 10,
+                                      childAspectRatio: 1.2,
+                                    ),
+                                    itemCount: noteFlashcards.length,
+                                    itemBuilder: (context, fcIndex) {
+                                      final card = noteFlashcards[fcIndex];
+                                      return FlipCardWidget(
+                                        flashcard: card,
+                                        onOptionsTap: () {
+                                          Navigator.pop(ctx);
+                                          _showNoteFlashcardOptions(context, card, note);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
                               ],
                             ),
                           ),
