@@ -74,18 +74,24 @@ class NotePage extends HiveObject {
       };
 
   factory NotePage.fromJson(Map<dynamic, dynamic> json) => NotePage(
-        id: json['id'] as String,
-        bookId: json['bookId'] as String,
-        title: json['title'] as String,
-        content: json['content'] as String? ?? '',
-        drawingImagePath: json['drawingImagePath'] as String?,
-        drawingJson: json['drawingJson'] as String?,
+        id: json['id']?.toString() ?? '',
+        bookId: json['bookId']?.toString() ?? '',
+        title: json['title']?.toString() ?? 'Sayfa',
+        content: json['content']?.toString() ?? '',
+        drawingImagePath: json['drawingImagePath']?.toString(),
+        drawingJson: json['drawingJson']?.toString(),
         isAdvanced: json['isAdvanced'] as bool? ?? false,
-        orderIndex: json['orderIndex'] as int? ?? 0,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-        reminderTime: json['reminderTime'] != null ? DateTime.parse(json['reminderTime'] as String) : null,
-        drawingRect: json['drawingRect'] as String?,
+        orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
+        createdAt: json['createdAt'] != null
+            ? (DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now())
+            : DateTime.now(),
+        updatedAt: json['updatedAt'] != null
+            ? (DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now())
+            : DateTime.now(),
+        reminderTime: json['reminderTime'] != null
+            ? DateTime.tryParse(json['reminderTime'].toString())
+            : null,
+        drawingRect: json['drawingRect']?.toString(),
       );
 }
 

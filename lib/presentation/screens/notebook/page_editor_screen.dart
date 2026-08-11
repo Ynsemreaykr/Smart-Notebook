@@ -239,7 +239,7 @@ class PageEditorScreen extends StatefulWidget {
   State<PageEditorScreen> createState() => _PageEditorScreenState();
 }
 
-class _PageEditorScreenState extends State<PageEditorScreen> {
+class _PageEditorScreenState extends State<PageEditorScreen> with WidgetsBindingObserver {
   late TextEditingController _titleCtrl;
   bool _initialized = false;
   bool _hasChanges = false;
@@ -326,9 +326,17 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _titleCtrl = TextEditingController();
     _pageController = PageController(initialPage: 0);
     _transformationController.addListener(_onTransformationChanged);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _save();
+    }
   }
 
   void _onTransformationChanged() {
@@ -343,6 +351,8 @@ class _PageEditorScreenState extends State<PageEditorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _save();
     _transformationController.removeListener(_onTransformationChanged);
     _transformationController.dispose();
     _searchFocusNode.dispose();

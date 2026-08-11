@@ -43,12 +43,16 @@ class Book extends HiveObject {
       };
 
   factory Book.fromJson(Map<dynamic, dynamic> json) => Book(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        updatedAt: DateTime.parse(json['updatedAt'] as String),
-        coverColor: json['coverColor'] as String? ?? '#4A90D9',
-        category: json['category'] as String? ?? '',
+        id: json['id']?.toString() ?? '',
+        title: json['title']?.toString() ?? 'Untitled',
+        createdAt: json['createdAt'] != null
+            ? (DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now())
+            : DateTime.now(),
+        updatedAt: json['updatedAt'] != null
+            ? (DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now())
+            : DateTime.now(),
+        coverColor: json['coverColor']?.toString() ?? '#4A90D9',
+        category: json['category']?.toString() ?? '',
       );
 }
 

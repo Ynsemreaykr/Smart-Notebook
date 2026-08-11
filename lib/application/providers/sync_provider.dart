@@ -1036,8 +1036,15 @@ class SyncProvider extends ChangeNotifier {
       final booksData = data['books'] as List<dynamic>? ?? [];
       for (final b in booksData) {
         if (b is Map) {
-          final book = Book.fromJson(Map<String, dynamic>.from(b));
-          await booksBox.put(book.id, book);
+          try {
+            final book = Book.fromJson(Map<dynamic, dynamic>.from(b));
+            if (book.id.isNotEmpty) {
+              await booksBox.put(book.id, book);
+              debugPrint('[RESTORE SUCCESS] Restored book: ${book.title} (ID: ${book.id})');
+            }
+          } catch (e) {
+            debugPrint('[RESTORE ERROR] Could not restore book: $e');
+          }
         }
       }
 
@@ -1126,8 +1133,14 @@ class SyncProvider extends ChangeNotifier {
 
             }
           }
-          final page = NotePage.fromJson(pageMap);
-          await pagesBox.put(page.id, page);
+          try {
+            final page = NotePage.fromJson(pageMap);
+            if (page.id.isNotEmpty) {
+              await pagesBox.put(page.id, page);
+            }
+          } catch (e) {
+            debugPrint('[RESTORE ERROR] Could not restore NotePage: $e');
+          }
         }
       }
 
