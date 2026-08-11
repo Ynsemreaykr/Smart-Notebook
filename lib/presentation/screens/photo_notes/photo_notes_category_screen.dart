@@ -834,7 +834,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             final totalFlashcards = groupedFlashcards.values.fold<int>(0, (sum, list) => sum + list.length);
 
             // Default all groups to collapsed when sheet first opens
-            collapsedGroups ??= Set.from(groupedFlashcards.keys);
+            final activeCollapsed = (collapsedGroups ??= Set.from(groupedFlashcards.keys));
 
             final displayEntries = selectedFilterGroup == null
                 ? groupedFlashcards.entries.toList()
@@ -1028,7 +1028,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                               final entry = displayEntries[gIndex];
                               final groupTitle = entry.key;
                               final cards = entry.value;
-                              final isCollapsed = collapsedGroups.contains(groupTitle);
+                              final isCollapsed = activeCollapsed.contains(groupTitle);
 
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 14.0),
@@ -1061,9 +1061,9 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                           onTap: () {
                                             setSheetState(() {
                                               if (isCollapsed) {
-                                                collapsedGroups.remove(groupTitle);
+                                                activeCollapsed.remove(groupTitle);
                                               } else {
-                                                collapsedGroups.add(groupTitle);
+                                                activeCollapsed.add(groupTitle);
                                               }
                                             });
                                           },
