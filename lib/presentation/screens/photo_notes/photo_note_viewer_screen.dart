@@ -1203,9 +1203,21 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           ),
                         ],
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
-                        onPressed: () => Navigator.pop(ctx),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 18),
+                            label: const Text('Yeni Kart Ekle', style: TextStyle(color: Color(0xFF14B8A6), fontWeight: FontWeight.bold, fontSize: 13)),
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupHeaderTitle);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1220,7 +1232,7 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                               children: [
                                 const Icon(Icons.style_outlined, color: Colors.white38, size: 48),
                                 const SizedBox(height: 12),
-                                const Text('Henüz bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 13)),
+                                const Text('Henüz bu görsele ait bilgi kartı eklenmedi.', style: TextStyle(color: Colors.white60, fontSize: 13)),
                                 const SizedBox(height: 12),
                                 ElevatedButton.icon(
                                   style: ElevatedButton.styleFrom(
@@ -1228,10 +1240,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                   ),
                                   icon: const Icon(Icons.add, color: Colors.white, size: 18),
-                                  label: const Text('İlk Kartı Ekle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  label: const Text('Bu Görsele İlk Kartı Ekle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    _openFlashcardsSheet(context, note);
+                                    _showAddEditFlashcardDialogForNote(context, note, defaultGroup: groupHeaderTitle);
                                   },
                                 ),
                               ],

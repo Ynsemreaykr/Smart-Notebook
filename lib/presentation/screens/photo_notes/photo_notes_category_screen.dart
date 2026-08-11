@@ -1200,42 +1200,66 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8.0),
-                            child: DragTarget<int>(
-                              onWillAcceptWithDetails: (details) => details.data != index,
-                              onAcceptWithDetails: (details) {
-                                final oldIndex = details.data;
-                                final newIndex = index;
-                                provider.reorderSubCategories(widget.category, oldIndex, newIndex);
+                            child: DragTarget<Flashcard>(
+                              onWillAcceptWithDetails: (details) => true,
+                              onAcceptWithDetails: (details) async {
+                                final movedCard = details.data;
+                                final messenger = ScaffoldMessenger.of(context);
+                                await provider.moveFlashcardToCategory(
+                                  flashcardId: movedCard.id,
+                                  targetCategory: fullPath,
+                                  targetGroupTitle: subName,
+                                );
+                                if (mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text('Kart "$subName" ünitesine taşındı'),
+                                      duration: const Duration(seconds: 2),
+                                      backgroundColor: const Color(0xFF14B8A6),
+                                    ),
+                                  );
+                                }
                               },
-                              builder: (context, candidateData, rejectedData) {
-                                final isHovered = candidateData.isNotEmpty;
-                                return LongPressDraggable<int>(
-                                  data: index,
-                                  feedback: Material(
-                                    color: Colors.transparent,
-                                    elevation: 8,
-                                    child: SizedBox(
-                                      width: MediaQuery.of(context).size.width - 32,
-                                      child: Opacity(
-                                        opacity: 0.85,
+                              builder: (context, flashcardCandidateData, _) {
+                                final isFlashcardHovered = flashcardCandidateData.isNotEmpty;
+                                return DragTarget<int>(
+                                  onWillAcceptWithDetails: (details) => details.data != index,
+                                  onAcceptWithDetails: (details) {
+                                    final oldIndex = details.data;
+                                    final newIndex = index;
+                                    provider.reorderSubCategories(widget.category, oldIndex, newIndex);
+                                  },
+                                  builder: (context, candidateData, rejectedData) {
+                                    final isHovered = candidateData.isNotEmpty || isFlashcardHovered;
+                                    return LongPressDraggable<int>(
+                                      data: index,
+                                      feedback: Material(
+                                        color: Colors.transparent,
+                                        elevation: 8,
+                                        child: SizedBox(
+                                          width: MediaQuery.of(context).size.width - 32,
+                                          child: Opacity(
+                                            opacity: 0.85,
+                                            child: _buildUnitCard(subName, fullPath, noteCount),
+                                          ),
+                                        ),
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: 0.35,
                                         child: _buildUnitCard(subName, fullPath, noteCount),
                                       ),
-                                    ),
-                                  ),
-                                  childWhenDragging: Opacity(
-                                    opacity: 0.35,
-                                    child: _buildUnitCard(subName, fullPath, noteCount),
-                                  ),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(AppRadius.medium),
-                                      border: isHovered
-                                          ? Border.all(color: const Color(0xFF14B8A6), width: 2.5)
-                                          : null,
-                                    ),
-                                    child: _buildUnitCard(subName, fullPath, noteCount),
-                                  ),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 200),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                          border: isHovered
+                                              ? Border.all(color: const Color(0xFF14B8A6), width: 2.5)
+                                              : null,
+                                        ),
+                                        child: _buildUnitCard(subName, fullPath, noteCount),
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),

@@ -1049,6 +1049,27 @@ class PhotoNoteProvider extends ChangeNotifier {
     await loadPhotoNotes();
   }
 
+  /// Move a Flashcard to a different unit/category path
+  Future<void> moveFlashcardToCategory({
+    required String flashcardId,
+    required String targetCategory,
+    String? targetGroupTitle,
+  }) async {
+    final box = Hive.box(_boxName);
+    final rawData = box.get(flashcardId);
+    if (rawData == null || rawData is! Map) return;
+
+    final existing = Flashcard.fromMap(rawData);
+    final updated = existing.copyWith(
+      category: targetCategory.trim(),
+      groupTitle: targetGroupTitle != null ? (targetGroupTitle.trim().isEmpty ? 'Genel Bilgiler' : targetGroupTitle.trim()) : existing.groupTitle,
+      updatedAt: DateTime.now(),
+    );
+
+    await box.put(flashcardId, updated.toMap());
+    await loadPhotoNotes();
+  }
+
   /// Rename a group heading for flashcards in a category/note
   Future<void> renameFlashcardGroup({
     required String oldGroupTitle,
