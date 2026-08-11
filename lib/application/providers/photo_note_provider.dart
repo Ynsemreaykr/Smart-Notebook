@@ -893,7 +893,7 @@ class PhotoNoteProvider extends ChangeNotifier {
 
   /// Get flashcards grouped by heading/groupTitle for a category in saved group order
   Map<String, List<Flashcard>> getGroupedFlashcardsForCategory(String categoryPath) {
-    final cards = getFlashcardsForCategory(categoryPath);
+    final cards = getFlashcardsForCategory(categoryPath, includeSubCategories: true);
     final Map<String, List<Flashcard>> map = {};
     for (var card in cards) {
       final group = card.groupTitle.trim().isEmpty ? 'Genel Bilgiler' : card.groupTitle.trim();
