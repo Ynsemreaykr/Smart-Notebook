@@ -819,6 +819,9 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
   }
 
   void _openCategoryFlashcardsSheet(BuildContext context) {
+    String? selectedFilterGroup;
+    final Set<String> collapsedGroups = {};
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -830,8 +833,14 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             final groupedFlashcards = provider.getGroupedFlashcardsForCategory(widget.category);
             final totalFlashcards = groupedFlashcards.values.fold<int>(0, (sum, list) => sum + list.length);
 
+            final displayEntries = selectedFilterGroup == null
+                ? groupedFlashcards.entries.toList()
+                : groupedFlashcards.entries.where((e) => e.key == selectedFilterGroup).toList();
+
+            final allCollapsed = collapsedGroups.length >= groupedFlashcards.length;
+
             return Container(
-              height: MediaQuery.of(context).size.height * 0.82,
+              height: MediaQuery.of(context).size.height * 0.85,
               decoration: const BoxDecoration(
                 color: Color(0xFF1E293B),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -890,7 +899,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                         children: [
                           TextButton.icon(
                             icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFF14B8A6), size: 16),
-                            label: const Text('Yeni Grup Ekle', style: TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold)),
+                            label: const Text('Yeni Grup', style: TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold)),
                             onPressed: () {
                               _showAddNewHeadingDialog();
                             },
@@ -903,7 +912,66 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
+
+                  // Horizontal Filter Chips Bar
+                  if (groupedFlashcards.isNotEmpty)
+                    SizedBox(
+                      height: 36,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          // "Tümü" Chip
+                          ChoiceChip(
+                            label: Text('Tümü ($totalFlashcards)'),
+                            selected: selectedFilterGroup == null,
+                            selectedColor: const Color(0xFF14B8A6),
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                            labelStyle: TextStyle(
+                              color: selectedFilterGroup == null ? Colors.white : Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                            onSelected: (_) {
+                              setSheetState(() => selectedFilterGroup = null);
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          // Individual Group Chips
+                          ...groupedFlashcards.entries.map((entry) {
+                            final gTitle = entry.key;
+                            final count = entry.value.length;
+                            final isSel = selectedFilterGroup == gTitle;
+                            final isVisual = gTitle.toLowerCase().contains('görsel');
+
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: ChoiceChip(
+                                avatar: Icon(
+                                  isVisual ? Icons.photo_library_outlined : Icons.folder_open_rounded,
+                                  size: 14,
+                                  color: isSel ? Colors.white : const Color(0xFF14B8A6),
+                                ),
+                                label: Text('$gTitle ($count)'),
+                                selected: isSel,
+                                selectedColor: const Color(0xFF14B8A6),
+                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                labelStyle: TextStyle(
+                                  color: isSel ? Colors.white : Colors.white70,
+                                  fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 12,
+                                ),
+                                onSelected: (_) {
+                                  setSheetState(() => selectedFilterGroup = isSel ? null : gTitle);
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 10),
 
                   // Action Buttons Row
                   Row(
@@ -914,15 +982,37 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                             backgroundColor: const Color(0xFF14B8A6),
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
                           icon: const Icon(Icons.add_rounded, size: 18),
                           label: const Text('Yeni Bilgi Kartı Ekle', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                           onPressed: () {
-                            _showAddEditFlashcardSheet();
+                            _showAddEditFlashcardSheet(defaultGroup: selectedFilterGroup);
                           },
                         ),
                       ),
+                      if (groupedFlashcards.length > 1) ...[
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                            side: const BorderSide(color: Colors.white24),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          icon: Icon(allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded, size: 16, color: Colors.white70),
+                          label: Text(allCollapsed ? 'Aç' : 'Daralt', style: const TextStyle(fontSize: 12)),
+                          onPressed: () {
+                            setSheetState(() {
+                              if (allCollapsed) {
+                                collapsedGroups.clear();
+                              } else {
+                                collapsedGroups.addAll(groupedFlashcards.keys);
+                              }
+                            });
+                          },
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -954,18 +1044,19 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                           )
                         : ListView.builder(
                             physics: const BouncingScrollPhysics(),
-                            itemCount: groupedFlashcards.length,
+                            itemCount: displayEntries.length,
                             itemBuilder: (context, gIndex) {
-                              final entry = groupedFlashcards.entries.elementAt(gIndex);
+                              final entry = displayEntries[gIndex];
                               final groupTitle = entry.key;
                               final cards = entry.value;
+                              final isCollapsed = collapsedGroups.contains(groupTitle);
 
                               return Padding(
-                                padding: const EdgeInsets.only(bottom: 16.0),
+                                padding: const EdgeInsets.only(bottom: 14.0),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Group Header Row (Acts as DragTarget to receive dropped flashcards)
+                                    // Accordion Group Header Row (Interactive Toggle & DragTarget)
                                     DragTarget<Flashcard>(
                                       onWillAcceptWithDetails: (details) => details.data.groupTitle.trim() != groupTitle.trim(),
                                       onAcceptWithDetails: (details) async {
@@ -987,109 +1078,129 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                       },
                                       builder: (context, candidateData, rejectedData) {
                                         final isHovering = candidateData.isNotEmpty;
-                                        return AnimatedContainer(
-                                          duration: const Duration(milliseconds: 200),
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                          decoration: BoxDecoration(
-                                            color: isHovering
-                                                ? const Color(0xFF14B8A6).withValues(alpha: 0.35)
-                                                : const Color(0xFF14B8A6).withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(AppRadius.medium),
-                                            border: Border.all(
-                                              color: isHovering ? const Color(0xFF14B8A6) : const Color(0xFF14B8A6).withValues(alpha: 0.35),
-                                              width: isHovering ? 2.5 : 1,
+                                        return InkWell(
+                                          onTap: () {
+                                            setSheetState(() {
+                                              if (isCollapsed) {
+                                                collapsedGroups.remove(groupTitle);
+                                              } else {
+                                                collapsedGroups.add(groupTitle);
+                                              }
+                                            });
+                                          },
+                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(milliseconds: 200),
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                            decoration: BoxDecoration(
+                                              color: isHovering
+                                                  ? const Color(0xFF14B8A6).withValues(alpha: 0.35)
+                                                  : const Color(0xFF14B8A6).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                                              border: Border.all(
+                                                color: isHovering ? const Color(0xFF14B8A6) : const Color(0xFF14B8A6).withValues(alpha: 0.35),
+                                                width: isHovering ? 2.5 : 1,
+                                              ),
                                             ),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Expanded(
-                                                child: Row(
-                                                  children: [
-                                                    Icon(
-                                                      isHovering ? Icons.move_to_inbox_rounded : Icons.topic_rounded,
-                                                      color: const Color(0xFF14B8A6),
-                                                      size: 18,
-                                                    ),
-                                                    const SizedBox(width: 8),
-                                                    Expanded(
-                                                      child: Text(
-                                                        isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
-                                                        style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight: FontWeight.bold,
-                                                          color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
-                                                        ),
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow.ellipsis,
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(
+                                                        isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
+                                                        color: const Color(0xFF14B8A6),
+                                                        size: 20,
                                                       ),
-                                                    ),
-                                                    const SizedBox(width: 6),
-                                                    Text(
-                                                      '${cards.length} Kart',
-                                                      style: const TextStyle(fontSize: 12, color: Colors.white70),
-                                                    ),
-                                                  ],
+                                                      const SizedBox(width: 6),
+                                                      Expanded(
+                                                        child: Text(
+                                                          isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
+                                                          style: TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
+                                                          ),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white10,
+                                                          borderRadius: BorderRadius.circular(10),
+                                                        ),
+                                                        child: Text(
+                                                          '${cards.length}',
+                                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 20),
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.all(4),
-                                                tooltip: 'Bu Başlığa Kart Ekle',
-                                                onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
-                                              ),
-                                            ],
+                                                IconButton(
+                                                  icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 20),
+                                                  constraints: const BoxConstraints(),
+                                                  padding: const EdgeInsets.all(4),
+                                                  tooltip: 'Bu Başlığa Kart Ekle',
+                                                  onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         );
                                       },
                                     ),
-                                    const SizedBox(height: 8),
-
-                                    // Grid of Cards under this Group Header
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 2,
-                                        crossAxisSpacing: 12.0,
-                                        mainAxisSpacing: 12.0,
-                                        childAspectRatio: 1.1,
-                                      ),
-                                      itemCount: cards.length,
-                                      itemBuilder: (context, index) {
-                                        final card = cards[index];
-                                        return LongPressDraggable<Flashcard>(
-                                          data: card,
-                                          feedback: Material(
-                                            elevation: 8,
-                                            color: Colors.transparent,
-                                            borderRadius: BorderRadius.circular(AppRadius.medium),
-                                            child: SizedBox(
-                                              width: (MediaQuery.of(context).size.width - 44) / 2,
-                                              height: 140,
-                                              child: Opacity(
-                                                opacity: 0.9,
-                                                child: FlipCardWidget(
-                                                  flashcard: card,
+                                    if (!isCollapsed) ...[
+                                      const SizedBox(height: 8),
+                                      // Grid of Cards under this Group Header
+                                      GridView.builder(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: 2,
+                                          crossAxisSpacing: 12.0,
+                                          mainAxisSpacing: 12.0,
+                                          childAspectRatio: 1.1,
+                                        ),
+                                        itemCount: cards.length,
+                                        itemBuilder: (context, index) {
+                                          final card = cards[index];
+                                          return LongPressDraggable<Flashcard>(
+                                            data: card,
+                                            feedback: Material(
+                                              elevation: 8,
+                                              color: Colors.transparent,
+                                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                                              child: SizedBox(
+                                                width: (MediaQuery.of(context).size.width - 44) / 2,
+                                                height: 140,
+                                                child: Opacity(
+                                                  opacity: 0.9,
+                                                  child: FlipCardWidget(
+                                                    flashcard: card,
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          childWhenDragging: Opacity(
-                                            opacity: 0.25,
+                                            childWhenDragging: Opacity(
+                                              opacity: 0.25,
+                                              child: FlipCardWidget(
+                                                flashcard: card,
+                                                onOptionsTap: () {},
+                                              ),
+                                            ),
                                             child: FlipCardWidget(
                                               flashcard: card,
-                                              onOptionsTap: () {},
+                                              onOptionsTap: () => _showFlashcardOptions(card),
                                             ),
-                                          ),
-                                          child: FlipCardWidget(
-                                            flashcard: card,
-                                            onOptionsTap: () => _showFlashcardOptions(card),
-                                          ),
-                                        );
-                                      },
-                                    ),
+                                          );
+                                        },
+                                      ),
+                                    ],
                                   ],
                                 ),
                               );

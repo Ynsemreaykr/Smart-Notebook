@@ -1132,11 +1132,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 ? allCards
                 : (() {
                     final targetGroup = _customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları';
-                    final filtered = allCards.where((f) {
+                    return allCards.where((f) {
                       final g = f.groupTitle.trim();
                       return g == targetGroup.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
                     }).toList();
-                    return filtered.isNotEmpty ? filtered : allCards;
                   })();
 
             final headerTitle = (index == null)
