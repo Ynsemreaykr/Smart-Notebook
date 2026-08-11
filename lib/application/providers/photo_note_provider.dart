@@ -870,12 +870,20 @@ class PhotoNoteProvider extends ChangeNotifier {
     return cloned;
   }
 
-  /// Get list of flashcards for a specific category path (only category-wide flashcards, excluding note-specific ones)
-  List<Flashcard> getFlashcardsForCategory(String categoryPath) {
+  /// Get list of flashcards for a specific category path (including both category-wide and note-specific flashcards inside this category)
+  List<Flashcard> getFlashcardsForCategory(String categoryPath, {bool includeSubCategories = false}) {
     final trimmed = categoryPath.trim();
-    return _flashcards
-        .where((f) => f.category.trim() == trimmed && (f.noteId == null || f.noteId!.trim().isEmpty))
-        .toList();
+    if (trimmed == 'Tümü' || trimmed.isEmpty) {
+      return _flashcards;
+    }
+    final prefix = '$trimmed / ';
+    return _flashcards.where((f) {
+      final cat = f.category.trim();
+      if (includeSubCategories) {
+        return cat == trimmed || cat.startsWith(prefix);
+      }
+      return cat == trimmed;
+    }).toList();
   }
 
   /// Get list of flashcards linked specifically to a PhotoNote

@@ -1152,8 +1152,9 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             final notes = provider.photoNotes.where((note) {
               return note.category.trim() == widget.category.trim();
             }).toList();
+            final categoryFlashcards = provider.getFlashcardsForCategory(widget.category);
 
-            if (subCategories.isEmpty && notes.isEmpty) {
+            if (subCategories.isEmpty && notes.isEmpty && categoryFlashcards.isEmpty) {
               return EmptyStateWidget(
                 icon: Icons.folder_open_rounded,
                 title: 'Henüz İçerik Bulunmuyor',
@@ -1245,7 +1246,52 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                   ),
                 ],
 
-                // 2. Section Header for Photo Notes
+                // 2. Bilgi Kartları (Flaş Kartlar) Section
+                if (categoryFlashcards.isNotEmpty) ...[
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          AppText(
+                            'Bilgi Kartları (${categoryFlashcards.length})',
+                            styleType: AppTextStyleType.headingSmall,
+                            styleOverride: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.add_rounded, size: 18, color: Color(0xFF14B8A6)),
+                            label: const AppText('Kart Ekle', styleType: AppTextStyleType.caption, color: Color(0xFF14B8A6)),
+                            onPressed: () => _showAddEditFlashcardSheet(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12.0,
+                        mainAxisSpacing: 12.0,
+                        childAspectRatio: 1.1,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final card = categoryFlashcards[index];
+                          return FlipCardWidget(
+                            flashcard: card,
+                            onOptionsTap: () => _showFlashcardOptions(card),
+                          );
+                        },
+                        childCount: categoryFlashcards.length,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // 3. Section Header for Photo Notes
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

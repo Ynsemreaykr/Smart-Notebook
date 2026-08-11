@@ -1128,13 +1128,16 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             final allCards = context.watch<PhotoNoteProvider>().getFlashcardsForNote(note.id);
-            final targetGroup = (index != null) ? (_customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları') : null;
             final noteFlashcards = (index == null)
                 ? allCards
-                : allCards.where((f) {
-                    final g = f.groupTitle.trim();
-                    return g == targetGroup!.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
-                  }).toList();
+                : (() {
+                    final targetGroup = _customAccordionTitles[index] ?? 'Görsel ${index + 1} Kartları';
+                    final filtered = allCards.where((f) {
+                      final g = f.groupTitle.trim();
+                      return g == targetGroup.trim() || g == 'Görsel ${index + 1}' || g == 'Görsel ${index + 1} Kartları';
+                    }).toList();
+                    return filtered.isNotEmpty ? filtered : allCards;
+                  })();
 
             final headerTitle = (index == null)
                 ? "Sayfadaki Tüm Bilgi Kartları (${noteFlashcards.length})"
