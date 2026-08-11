@@ -1067,18 +1067,19 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                               }
                                             });
                                           },
-                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                          borderRadius: BorderRadius.circular(8),
                                           child: AnimatedContainer(
                                             duration: const Duration(milliseconds: 200),
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            height: 28,
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
                                             decoration: BoxDecoration(
                                               color: isHovering
-                                                  ? const Color(0xFF14B8A6).withValues(alpha: 0.35)
-                                                  : const Color(0xFF14B8A6).withValues(alpha: 0.15),
-                                              borderRadius: BorderRadius.circular(AppRadius.medium),
+                                                  ? const Color(0xFF14B8A6).withValues(alpha: 0.3)
+                                                  : const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                                              borderRadius: BorderRadius.circular(8),
                                               border: Border.all(
-                                                color: isHovering ? const Color(0xFF14B8A6) : const Color(0xFF14B8A6).withValues(alpha: 0.35),
-                                                width: isHovering ? 2.5 : 1,
+                                                color: isHovering ? const Color(0xFF14B8A6) : const Color(0xFF14B8A6).withValues(alpha: 0.25),
+                                                width: isHovering ? 2 : 0.8,
                                               ),
                                             ),
                                             child: Row(
@@ -1088,16 +1089,16 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                                   child: Row(
                                                     children: [
                                                       Icon(
-                                                        isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
+                                                        isCollapsed ? Icons.chevron_right_rounded : Icons.keyboard_arrow_down_rounded,
                                                         color: const Color(0xFF14B8A6),
-                                                        size: 20,
+                                                        size: 18,
                                                       ),
-                                                      const SizedBox(width: 6),
+                                                      const SizedBox(width: 4),
                                                       Expanded(
                                                         child: Text(
                                                           isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
                                                           style: TextStyle(
-                                                            fontSize: 14,
+                                                            fontSize: 12.5,
                                                             fontWeight: FontWeight.bold,
                                                             color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
                                                           ),
@@ -1105,25 +1106,25 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                                           overflow: TextOverflow.ellipsis,
                                                         ),
                                                       ),
-                                                      const SizedBox(width: 6),
+                                                      const SizedBox(width: 4),
                                                       Container(
-                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                                         decoration: BoxDecoration(
-                                                          color: Colors.white10,
-                                                          borderRadius: BorderRadius.circular(10),
+                                                          color: Colors.white.withValues(alpha: 0.08),
+                                                          borderRadius: BorderRadius.circular(8),
                                                         ),
                                                         child: Text(
                                                           '${cards.length}',
-                                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                                                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
                                                         ),
                                                       ),
                                                     ],
                                                   ),
                                                 ),
                                                 IconButton(
-                                                  icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 20),
-                                                  constraints: const BoxConstraints(),
-                                                  padding: const EdgeInsets.all(4),
+                                                  icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 16),
+                                                  constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                  padding: EdgeInsets.zero,
                                                   tooltip: 'Bu Başlığa Kart Ekle',
                                                   onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
                                                 ),

@@ -1262,13 +1262,14 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       isGroupExpanded = !isGroupExpanded;
                                     });
                                   },
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    height: 28,
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF0F172A),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5), width: 1.2),
+                                      color: const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.3), width: 0.8),
                                     ),
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1276,44 +1277,44 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                         Row(
                                           children: [
                                             Icon(
-                                              isGroupExpanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+                                              isGroupExpanded ? Icons.keyboard_arrow_down_rounded : Icons.chevron_right_rounded,
                                               color: const Color(0xFF14B8A6),
-                                              size: 20,
+                                              size: 18,
                                             ),
-                                            const SizedBox(width: 6),
+                                            const SizedBox(width: 4),
                                             Text(
                                               groupHeaderTitle,
-                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12.5),
                                             ),
                                           ],
                                         ),
                                         Row(
                                           children: [
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                               decoration: BoxDecoration(
-                                                color: Colors.white10,
-                                                borderRadius: BorderRadius.circular(10),
+                                                color: Colors.white.withValues(alpha: 0.08),
+                                                borderRadius: BorderRadius.circular(8),
                                               ),
                                               child: Text(
                                                 '${noteFlashcards.length}',
-                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
                                               ),
                                             ),
-                                            const SizedBox(width: 6),
+                                            const SizedBox(width: 4),
                                             IconButton(
-                                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                                               padding: EdgeInsets.zero,
-                                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 15),
+                                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 14),
                                               onPressed: () {
                                                 Navigator.pop(ctx);
                                                 _editAccordionTitle(index ?? 0);
                                               },
                                             ),
                                             IconButton(
-                                              constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+                                              constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
                                               padding: EdgeInsets.zero,
-                                              icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 18),
+                                              icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 16),
                                               onPressed: () {
                                                 Navigator.pop(ctx);
                                                 _openFlashcardsSheet(context, note);
@@ -1759,35 +1760,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                             itemCount: noteFlashcards.length,
                             itemBuilder: (context, fIndex) {
                               final fCard = noteFlashcards[fIndex];
-                              return GestureDetector(
-                                onTap: () => _showNoteFlashcardOptions(context, fCard, note),
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E293B),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.5)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        fCard.frontText,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
-                                      ),
-                                       const Spacer(),
-                                       const Divider(color: Colors.white12, height: 8),
-                                       Text(
-                                         fCard.backText,
-                                         maxLines: 2,
-                                         overflow: TextOverflow.ellipsis,
-                                         style: const TextStyle(color: Colors.white70, fontSize: 10),
-                                       ),
-                                    ],
-                                  ),
-                                ),
+                              return FlipCardWidget(
+                                flashcard: fCard,
+                                onOptionsTap: () => _showNoteFlashcardOptions(context, fCard, note),
                               );
                             },
                           ),
