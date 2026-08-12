@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -21,6 +22,13 @@ import '../../domain/models/photo_note.dart';
 import '../../data/services/database_service.dart';
 import '../../data/services/google_drive_service.dart';
 
+enum BackupStatus {
+  idle,
+  running,
+  completed,
+  error,
+}
+
 class SyncProvider extends ChangeNotifier {
   FirebaseAuth get _auth => FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -36,6 +44,39 @@ class SyncProvider extends ChangeNotifier {
   String? _lastBackupDevice;
   String? _driveFolderId;
   String _imageProgress = '';
+
+  BackupStatus _backupStatus = BackupStatus.idle;
+  String? _backupStatusMessage;
+  Timer? _backupAutoDismissTimer;
+
+  bool get isFirebaseAvailable => _isFirebaseAvailable;
+  bool get isSyncing => _isSyncing;
+  String? get syncError => _syncError;
+  String get imageProgress => _imageProgress;
+
+  BackupStatus get backupStatus => _backupStatus;
+  String? get backupStatusMessage => _backupStatusMessage;
+
+  void _setBackupState(BackupStatus status, [String? message]) {
+    _backupAutoDismissTimer?.cancel();
+    _backupStatus = status;
+    _backupStatusMessage = message;
+    notifyListeners();
+
+    if (status == BackupStatus.completed) {
+      _backupAutoDismissTimer = Timer(const Duration(seconds: 3), () {
+        _backupStatus = BackupStatus.idle;
+        _backupStatusMessage = null;
+        notifyListeners();
+      });
+    } else if (status == BackupStatus.error) {
+      _backupAutoDismissTimer = Timer(const Duration(seconds: 5), () {
+        _backupStatus = BackupStatus.idle;
+        _backupStatusMessage = null;
+        notifyListeners();
+      });
+    }
+  }
 
   bool get isFirebaseAvailable => _isFirebaseAvailable;
   bool get isSyncing => _isSyncing;
@@ -724,13 +765,13 @@ class SyncProvider extends ChangeNotifier {
     final user = currentUser;
     if (user == null || !_isFirebaseAvailable) {
       _syncError = "Giriş yapılmış bir Google hesabı bulunamadı.";
-      notifyListeners();
+      _setBackupState(BackupStatus.error, _syncError);
       return false;
     }
 
     _isSyncing = true;
     _syncError = null;
-    notifyListeners();
+    _setBackupState(BackupStatus.running, 'Verileriniz buluta yedekleniyor...');
 
     String currentStep = "Başlatılıyor";
 
@@ -918,7 +959,7 @@ class SyncProvider extends ChangeNotifier {
       if (!writeSuccess) {
         _isSyncing = false;
         _syncError = "Yedekleme Buluta Yazılamadı!\n\nFirestore Hata: $lastFsErr\n(UID: ${user.uid})";
-        notifyListeners();
+        _setBackupState(BackupStatus.error, _syncError);
         return false;
       }
 
@@ -927,19 +968,19 @@ class SyncProvider extends ChangeNotifier {
       await settingsBox.put('last_backup_time', _lastBackupTime!.toIso8601String());
 
       _isSyncing = false;
-      notifyListeners();
+      _setBackupState(BackupStatus.completed, 'Yedekleme işlemi tamamlandı');
       return true;
     } on FirebaseException catch (fe) {
       debugPrint('[BACKUP DEBUG CATCH] FirebaseException at [$currentStep]: Code=[${fe.code}] Message=[${fe.message}] Plugin=[${fe.plugin}] Details=[$fe]');
       _isSyncing = false;
       _syncError = "[$currentStep]\nFirebase Hata: [${fe.code}]\n${fe.message ?? fe.toString()}\n(UID: ${user.uid})";
-      notifyListeners();
+      _setBackupState(BackupStatus.error, _syncError);
       return false;
     } catch (e, stack) {
       debugPrint('[BACKUP DEBUG CATCH] General Exception at [$currentStep]: Error=$e\n$stack');
       _isSyncing = false;
       _syncError = "[$currentStep]\nHata: $e";
-      notifyListeners();
+      _setBackupState(BackupStatus.error, _syncError);
       return false;
     }
   }
@@ -949,13 +990,13 @@ class SyncProvider extends ChangeNotifier {
     final user = currentUser;
     if (user == null || !_isFirebaseAvailable) {
       _syncError = "Giriş yapılmış bir Google hesabı bulunamadı.";
-      notifyListeners();
+      _setBackupState(BackupStatus.error, _syncError);
       return false;
     }
 
     _isSyncing = true;
     _syncError = null;
-    notifyListeners();
+    _setBackupState(BackupStatus.running, 'Geri yükleme yapılıyor...');
 
     String currentStep = "1. Buluttan Veri Çekiliyor";
     try {
@@ -1288,12 +1329,12 @@ class SyncProvider extends ChangeNotifier {
       }
 
       _isSyncing = false;
-      notifyListeners();
+      _setBackupState(BackupStatus.completed, 'Geri yükleme işlemi tamamlandı');
       return true;
     } catch (e) {
       _isSyncing = false;
       _syncError = "[$currentStep]\nGeri yükleme hatası: $e";
-      notifyListeners();
+      _setBackupState(BackupStatus.error, _syncError);
       return false;
     }
   }

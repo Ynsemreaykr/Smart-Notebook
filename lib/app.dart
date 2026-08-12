@@ -15,6 +15,8 @@ import 'presentation/screens/planner/planner_screen.dart';
 import 'presentation/screens/photo_notes/photo_notes_screen.dart';
 import 'presentation/screens/photo_notes/photo_note_viewer_screen.dart';
 
+import 'presentation/widgets/global_backup_status_overlay.dart';
+
 class SmartNotebookApp extends StatefulWidget {
   const SmartNotebookApp({super.key});
 
@@ -225,6 +227,9 @@ class _SmartNotebookAppState extends State<SmartNotebookApp> {
           theme: themeProvider.activeThemeData,
           darkTheme: themeProvider.activeThemeData,
           themeMode: themeProvider.themeMode,
+          builder: (context, child) {
+            return GlobalBackupStatusOverlay(child: child ?? const SizedBox());
+          },
           home: const HomeScreen(),
         );
       },

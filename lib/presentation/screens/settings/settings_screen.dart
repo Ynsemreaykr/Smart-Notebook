@@ -37,112 +37,12 @@ class SettingsScreen extends StatelessWidget {
     required SyncProvider syncProvider,
     required bool isRestore,
   }) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) {
-        return Consumer<SyncProvider>(
-          builder: (context, sync, child) {
-            final progressText = sync.imageProgress.isNotEmpty
-                ? sync.imageProgress
-                : (isRestore ? 'Verileriniz buluttan indiriliyor...' : 'Verileriniz buluta yedekleniyor...');
-
-            return AlertDialog(
-              backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: BorderSide(color: AppTheme.neonBlue.withValues(alpha: 0.4), width: 1.5),
-              ),
-              content: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.neonBlue.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        isRestore ? Icons.cloud_download_rounded : Icons.cloud_upload_rounded,
-                        size: 36,
-                        color: AppTheme.neonBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      isRestore ? 'Yedekten Geri Yükleniyor' : 'Buluta Yedekleniyor',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      progressText,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.neonBlue,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: LinearProgressIndicator(
-                        minHeight: 6,
-                        backgroundColor: Colors.white10,
-                        valueColor: AlwaysStoppedAnimation<Color>(AppTheme.neonBlue),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Lütfen işlem tamamlanana kadar uygulamayı kapatmayın.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppTheme.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
     final success = isRestore
         ? await syncProvider.restoreFromCloud()
         : await syncProvider.backupToCloud();
 
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-
-    if (context.mounted) {
-      if (success) {
-        if (isRestore) _refreshAllProviders(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isRestore ? 'Verileriniz başarıyla geri yüklendi!' : 'Verileriniz başarıyla buluta yedeklendi!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(syncProvider.syncError ?? (isRestore ? 'Geri yükleme başarısız oldu.' : 'Yedekleme başarısız oldu.')),
-            backgroundColor: Colors.redAccent,
-            duration: const Duration(seconds: 8),
-          ),
-        );
-      }
+    if (context.mounted && isRestore && success) {
+      _refreshAllProviders(context);
     }
   }
 
