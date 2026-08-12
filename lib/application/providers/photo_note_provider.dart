@@ -114,9 +114,9 @@ class PhotoNoteProvider extends ChangeNotifier {
         }
       }
 
-      // Add any remaining notes sorted by updatedAt (newest first)
+      // Add any remaining notes sorted by createdAt (oldest first, newest at the end)
       final remaining = loadedMap.values.toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       sortedNotes.addAll(remaining);
 
       _photoNotes = sortedNotes;
@@ -204,6 +204,17 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     final box = Hive.box(_boxName);
     await box.put(id, newNote.toMap());
+
+    // Append new note ID to 'notes_order' so it is added to the END of the list
+    final savedOrder = box.get('notes_order');
+    final List<String> orderList = (savedOrder is List)
+        ? List<String>.from(savedOrder)
+        : _photoNotes.map((n) => n.id).toList();
+    if (!orderList.contains(id)) {
+      orderList.add(id);
+      await box.put('notes_order', orderList);
+    }
+
     await loadPhotoNotes();
     return newNote;
   }
@@ -362,6 +373,7 @@ class PhotoNoteProvider extends ChangeNotifier {
 
     final updatedNote = existingNote.copyWith(
       imageNotes: notes,
+      note: (imageIndex == 0) ? noteText.trim() : existingNote.note,
       updatedAt: DateTime.now(),
     );
 

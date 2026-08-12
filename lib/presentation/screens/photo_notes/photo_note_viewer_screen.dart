@@ -1907,9 +1907,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         final totalImages = note.imagePaths.length;
         final currentImgIndex = (_currentPage < totalImages) ? _currentPage : 0;
 
-        final imageNoteText = (currentImgIndex < note.imageNotes.length && note.imageNotes[currentImgIndex].isNotEmpty)
-            ? note.imageNotes[currentImgIndex]
-            : (currentImgIndex == 0 ? note.note : '');
+        final imageNoteText = _localImageNotes[currentImgIndex] ??
+            ((currentImgIndex < note.imageNotes.length && note.imageNotes[currentImgIndex].isNotEmpty)
+                ? note.imageNotes[currentImgIndex]
+                : (currentImgIndex == 0 ? note.note : ''));
         final overlaySections = _parseSections(imageNoteText);
 
         return Scaffold(
