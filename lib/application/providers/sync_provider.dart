@@ -78,10 +78,6 @@ class SyncProvider extends ChangeNotifier {
     }
   }
 
-  bool get isFirebaseAvailable => _isFirebaseAvailable;
-  bool get isSyncing => _isSyncing;
-  String? get syncError => _syncError;
-  String get imageProgress => _imageProgress;
 
   DateTime? get lastBackupTime => _lastBackupTime;
   String? get lastBackupDevice => _lastBackupDevice;
