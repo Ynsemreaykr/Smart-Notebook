@@ -14,6 +14,7 @@ import '../../widgets/bounce_button.dart';
 import '../../widgets/fade_slide_entrance.dart';
 import '../../widgets/empty_state_widget.dart';
 import 'photo_notes_category_screen.dart';
+import '../../widgets/image_cropper_dialog.dart';
 
 class PhotoNotesScreen extends StatefulWidget {
   const PhotoNotesScreen({super.key});
@@ -122,8 +123,9 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                   imageQuality: 85,
                 );
                 if (picked != null) {
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
                   setModalState(() {
-                    selectedImage = File(picked.path);
+                    selectedImage = cropped ?? File(picked.path);
                   });
                 }
               } catch (e) {
@@ -163,7 +165,7 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                     GestureDetector(
                       onTap: () {
                         showModalBottomSheet(
-                          context: context,
+                          context: ctx,
                           backgroundColor: AppColors.surface,
                           shape: const RoundedRectangleBorder(
                             borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.medium)),
@@ -188,6 +190,20 @@ class _PhotoNotesScreenState extends State<PhotoNotesScreen> {
                                     pickImage(ImageSource.camera);
                                   },
                                 ),
+                                if (selectedImage != null)
+                                  ListTile(
+                                    leading: const Icon(Icons.crop_rounded, color: Color(0xFFF59E0B)),
+                                    title: const AppText('Mevcut Görseli Düzenle (Kırp)', styleType: AppTextStyleType.bodyMedium),
+                                    onTap: () async {
+                                      Navigator.pop(subCtx);
+                                      final cropped = await showImageCropper(context, imageFile: selectedImage!);
+                                      if (cropped != null) {
+                                        setModalState(() {
+                                          selectedImage = cropped;
+                                        });
+                                      }
+                                    },
+                                  ),
                               ],
                             ),
                           ),

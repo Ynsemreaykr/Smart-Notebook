@@ -18,6 +18,7 @@ import '../../widgets/flip_card_widget.dart';
 import '../../widgets/move_or_copy_modal.dart';
 import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_detail_text_screen.dart';
+import '../../widgets/image_cropper_dialog.dart';
 
 class PhotoNoteViewerScreen extends StatefulWidget {
   final String noteId;
@@ -1608,7 +1609,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 final picker = ImagePicker();
                 final picked = await picker.pickImage(source: ImageSource.gallery);
                 if (picked != null) {
-                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
+                  if (cropped != null && context.mounted) {
+                    await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, cropped);
+                  }
                 }
               },
             ),
@@ -1620,10 +1624,26 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 final picker = ImagePicker();
                 final picked = await picker.pickImage(source: ImageSource.camera);
                 if (picked != null) {
-                  await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, File(picked.path));
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
+                  if (cropped != null && context.mounted) {
+                    await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, cropped);
+                  }
                 }
               },
             ),
+            if (imageIndex < note.imagePaths.length)
+              ListTile(
+                leading: const Icon(Icons.crop_rounded, color: Color(0xFFF59E0B)),
+                title: const Text('Mevcut Görseli Düzenle (Kırp)', style: TextStyle(color: Colors.white)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final currentPath = note.imagePaths[imageIndex];
+                  final cropped = await showImageCropper(context, imageFile: File(currentPath));
+                  if (cropped != null && context.mounted) {
+                    await context.read<PhotoNoteProvider>().replaceImageInNote(note.id, imageIndex, cropped);
+                  }
+                },
+              ),
           ],
         ),
       ),
@@ -1796,7 +1816,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 final picker = ImagePicker();
                 final picked = await picker.pickImage(source: ImageSource.gallery);
                 if (picked != null) {
-                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
+                  if (cropped != null) {
+                    await provider.addExtraImagesToNote(note.id, [cropped], isQuestion: true);
+                  }
                 }
               },
             ),
@@ -1808,7 +1831,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 final picker = ImagePicker();
                 final picked = await picker.pickImage(source: ImageSource.camera);
                 if (picked != null) {
-                  await provider.addExtraImagesToNote(note.id, [File(picked.path)], isQuestion: true);
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
+                  if (cropped != null) {
+                    await provider.addExtraImagesToNote(note.id, [cropped], isQuestion: true);
+                  }
                 }
               },
             ),

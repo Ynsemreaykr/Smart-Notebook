@@ -21,6 +21,7 @@ import '../../widgets/single_tap_cursor_textfield.dart';
 import 'photo_note_viewer_screen.dart';
 import 'photo_note_detail_text_screen.dart';
 import '../../widgets/transfer_sheet.dart';
+import '../../widgets/image_cropper_dialog.dart';
 
 class PhotoNotesCategoryScreen extends StatefulWidget {
   final String category;
@@ -134,8 +135,9 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                   imageQuality: 85,
                 );
                 if (picked != null) {
+                  final cropped = await showImageCropper(context, imageFile: File(picked.path));
                   setModalState(() {
-                    selectedImage = File(picked.path);
+                    selectedImage = cropped ?? File(picked.path);
                   });
                 }
               } catch (e) {
@@ -200,6 +202,20 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                     pickImage(ImageSource.camera);
                                   },
                                 ),
+                                if (selectedImage != null)
+                                  ListTile(
+                                    leading: const Icon(Icons.crop_rounded, color: Color(0xFFF59E0B)),
+                                    title: const AppText('Mevcut Görseli Düzenle (Kırp)', styleType: AppTextStyleType.bodyMedium),
+                                    onTap: () async {
+                                      Navigator.pop(c);
+                                      final cropped = await showImageCropper(context, imageFile: selectedImage!);
+                                      if (cropped != null) {
+                                        setModalState(() {
+                                          selectedImage = cropped;
+                                        });
+                                      }
+                                    },
+                                  ),
                               ],
                             ),
                           ),

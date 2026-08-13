@@ -23,6 +23,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../widgets/common/app_text.dart';
 import '../../widgets/floating_calculator.dart';
 import '../../widgets/floating_book_shortcut.dart';
+import '../../widgets/image_cropper_dialog.dart';
 
 enum EditorMode { text, drawing, pan, questionCrop }
 
@@ -2013,6 +2014,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> with WidgetsBinding
     final provider = context.read<PhotoNoteProvider>();
     final categories = provider.customCategories;
 
+    File activeCroppedFile = croppedFile;
     String selectedCategory = categories.isNotEmpty ? categories.first : 'Tümü';
     String? selectedSubUnit;
     PhotoNote? selectedNote;
@@ -2066,16 +2068,50 @@ class _PageEditorScreenState extends State<PageEditorScreen> with WidgetsBinding
                     ),
                     const SizedBox(height: 8),
 
-                    Container(
-                      height: 140,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.file(croppedFile, fit: BoxFit.contain),
+                    GestureDetector(
+                      onTap: () async {
+                        final fineCropped = await showImageCropper(context, imageFile: activeCroppedFile);
+                        if (fineCropped != null) {
+                          setModalState(() {
+                            activeCroppedFile = fineCropped;
+                          });
+                        }
+                      },
+                      child: Container(
+                        height: 140,
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                        ),
+                        child: Stack(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(activeCroppedFile, fit: BoxFit.contain, width: double.infinity, height: double.infinity),
+                            ),
+                            Positioned(
+                              right: 8,
+                              bottom: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFF59E0B), width: 1),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.crop_rounded, color: Color(0xFFF59E0B), size: 14),
+                                    SizedBox(width: 4),
+                                    Text('Kırp / İnce Ayar Yap ✂️', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -2218,7 +2254,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> with WidgetsBinding
 
                         if (selectedNote != null) {
                           final noteId = selectedNote!.id;
-                          await provider.addExtraImagesToNote(noteId, [croppedFile], isQuestion: isQuestionType);
+                          await provider.addExtraImagesToNote(noteId, [activeCroppedFile], isQuestion: isQuestionType);
                           final reloadedNote = provider.photoNotes.firstWhere((n) => n.id == noteId);
                           if (noteText.isNotEmpty) {
                             final newImgIndex = reloadedNote.imagePaths.length - 1;
@@ -2238,7 +2274,7 @@ class _PageEditorScreenState extends State<PageEditorScreen> with WidgetsBinding
                           final title = newCardTitleCtrl.text.trim().isEmpty ? 'Soru Notu (${DateTime.now().day}/${DateTime.now().month})' : newCardTitleCtrl.text.trim();
                           final newNote = await provider.addPhotoNote(
                             title: title,
-                            imageFile: croppedFile,
+                            imageFile: activeCroppedFile,
                             category: cat,
                             color: '#1E3A8A',
                             note: noteText,
