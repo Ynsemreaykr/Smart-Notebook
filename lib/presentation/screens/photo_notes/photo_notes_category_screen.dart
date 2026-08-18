@@ -622,15 +622,47 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
           ),
-          TextButton(
-            onPressed: () {
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF14B8A6)),
+            onPressed: () async {
               final title = controller.text.trim();
               Navigator.pop(ctx);
               if (title.isNotEmpty) {
-                _showAddEditFlashcardSheet(defaultGroup: title);
+                await context.read<PhotoNoteProvider>().addFlashcardGroup(widget.category, title);
               }
             },
-            child: AppText('Oluştur ve Kart Ekle', styleType: AppTextStyleType.label, color: const Color(0xFF14B8A6)),
+            child: const Text('Oluştur', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteHeadingDialog(String groupTitle) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const AppText('Başlığı Sil', styleType: AppTextStyleType.headingMedium, styleOverride: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+          '"$groupTitle" başlığını silmek istediğinizden emin misiniz?\nİçerisindeki kartlar "Genel Bilgiler" başlığına taşınacaktır.',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: AppText('İptal', styleType: AppTextStyleType.label, color: AppColors.textSecondary),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await context.read<PhotoNoteProvider>().deleteFlashcardGroup(
+                categoryPath: widget.category,
+                groupTitle: groupTitle,
+              );
+            },
+            child: const Text('Sil ve Taşı', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -1012,7 +1044,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Content Body (Grouped Flashcards List/Grid)
+                  // Content Body (Grouped Flashcards List/Grid with Reordering and Drag & Drop)
                   Expanded(
                     child: groupedFlashcards.isEmpty
                         ? Center(
@@ -1037,22 +1069,27 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                               ],
                             ),
                           )
-                        : ListView.builder(
-                            physics: const BouncingScrollPhysics(),
-                            itemCount: displayEntries.length,
-                            itemBuilder: (context, gIndex) {
-                              final entry = displayEntries[gIndex];
-                              final groupTitle = entry.key;
-                              final cards = entry.value;
-                              final isCollapsed = activeCollapsed.contains(groupTitle);
+                        : selectedFilterGroup == null
+                            ? ReorderableListView.builder(
+                                physics: const BouncingScrollPhysics(),
+                                buildDefaultDragHandles: false,
+                                itemCount: displayEntries.length,
+                                onReorder: (oldIndex, newIndex) async {
+                                  if (oldIndex < newIndex) {
+                                    newIndex -= 1;
+                                  }
+                                  await provider.reorderFlashcardGroups(widget.category, oldIndex, newIndex);
+                                },
+                                itemBuilder: (context, gIndex) {
+                                  final entry = displayEntries[gIndex];
+                                  final groupTitle = entry.key;
+                                  final cards = entry.value;
+                                  final isCollapsed = activeCollapsed.contains(groupTitle);
 
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 14.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Accordion Group Header Row (Interactive Toggle & DragTarget)
-                                    DragTarget<Flashcard>(
+                                  return Container(
+                                    key: ValueKey('flashcard_group_$groupTitle'),
+                                    margin: const EdgeInsets.only(bottom: 14.0),
+                                    child: DragTarget<Flashcard>(
                                       onWillAcceptWithDetails: (details) => details.data.groupTitle.trim() != groupTitle.trim(),
                                       onAcceptWithDetails: (details) async {
                                         final movedCard = details.data;
@@ -1064,7 +1101,7 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                         if (mounted) {
                                           messenger.showSnackBar(
                                             SnackBar(
-                                              content: Text('Kart "$groupTitle" grubuna taşındı'),
+                                              content: Text('Kart "$groupTitle" başlığı altına taşındı'),
                                               duration: const Duration(seconds: 2),
                                               backgroundColor: const Color(0xFF14B8A6),
                                             ),
@@ -1073,7 +1110,239 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                       },
                                       builder: (context, candidateData, rejectedData) {
                                         final isHovering = candidateData.isNotEmpty;
-                                        return InkWell(
+                                        return AnimatedContainer(
+                                          duration: const Duration(milliseconds: 200),
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: isHovering
+                                                ? const Color(0xFF14B8A6).withValues(alpha: 0.15)
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: isHovering
+                                                ? Border.all(color: const Color(0xFF14B8A6), width: 2)
+                                                : Border.all(color: Colors.transparent, width: 2),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              // Accordion Group Header Row
+                                              InkWell(
+                                                onTap: () {
+                                                  setSheetState(() {
+                                                    if (isCollapsed) {
+                                                      activeCollapsed.remove(groupTitle);
+                                                    } else {
+                                                      activeCollapsed.add(groupTitle);
+                                                    }
+                                                  });
+                                                },
+                                                borderRadius: BorderRadius.circular(8),
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(milliseconds: 200),
+                                                  height: 32,
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                  decoration: BoxDecoration(
+                                                    color: isHovering
+                                                        ? const Color(0xFF14B8A6).withValues(alpha: 0.3)
+                                                        : const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(
+                                                      color: isHovering
+                                                          ? const Color(0xFF14B8A6)
+                                                          : const Color(0xFF14B8A6).withValues(alpha: 0.25),
+                                                      width: isHovering ? 2 : 0.8,
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                    children: [
+                                                      Expanded(
+                                                        child: Row(
+                                                          children: [
+                                                            ReorderableDragStartListener(
+                                                              index: gIndex,
+                                                              child: const Padding(
+                                                                padding: EdgeInsets.only(right: 6),
+                                                                child: Icon(Icons.drag_indicator_rounded, color: Colors.white38, size: 20),
+                                                              ),
+                                                            ),
+                                                            Icon(
+                                                              isCollapsed ? Icons.chevron_right_rounded : Icons.keyboard_arrow_down_rounded,
+                                                              color: const Color(0xFF14B8A6),
+                                                              size: 18,
+                                                            ),
+                                                            const SizedBox(width: 4),
+                                                            Expanded(
+                                                              child: Text(
+                                                                isHovering ? '📥 "$groupTitle" başlığına bırak' : groupTitle,
+                                                                style: TextStyle(
+                                                                  fontSize: 12.5,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
+                                                                ),
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                              ),
+                                                            ),
+                                                            const SizedBox(width: 4),
+                                                            Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.white.withValues(alpha: 0.08),
+                                                                borderRadius: BorderRadius.circular(8),
+                                                              ),
+                                                              child: Text(
+                                                                '${cards.length}',
+                                                                style: const TextStyle(
+                                                                  fontSize: 10.5,
+                                                                  fontWeight: FontWeight.bold,
+                                                                  color: Color(0xFF14B8A6),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      Row(
+                                                        mainAxisSize: MainAxisSize.min,
+                                                        children: [
+                                                          IconButton(
+                                                            icon: const Icon(Icons.add_rounded, color: Color(0xFF14B8A6), size: 16),
+                                                            constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                            padding: EdgeInsets.zero,
+                                                            tooltip: 'Bu Başlığa Kart Ekle',
+                                                            onPressed: () => _showAddEditFlashcardSheet(defaultGroup: groupTitle),
+                                                          ),
+                                                          PopupMenuButton<String>(
+                                                            icon: const Icon(Icons.more_vert_rounded, color: Colors.white54, size: 16),
+                                                            padding: EdgeInsets.zero,
+                                                            constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+                                                            color: const Color(0xFF1E293B),
+                                                            onSelected: (val) {
+                                                              if (val == 'rename') {
+                                                                _showRenameHeadingDialog(groupTitle);
+                                                              } else if (val == 'delete') {
+                                                                _confirmDeleteHeadingDialog(groupTitle);
+                                                              }
+                                                            },
+                                                            itemBuilder: (ctx) => [
+                                                              const PopupMenuItem(
+                                                                value: 'rename',
+                                                                child: Row(
+                                                                  children: [
+                                                                    Icon(Icons.edit_rounded, color: Color(0xFF14B8A6), size: 16),
+                                                                    SizedBox(width: 8),
+                                                                    Text('Başlığı Yeniden Adlandır', style: TextStyle(color: Colors.white, fontSize: 12)),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                              const PopupMenuItem(
+                                                                value: 'delete',
+                                                                child: Row(
+                                                                  children: [
+                                                                    Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 16),
+                                                                    SizedBox(width: 8),
+                                                                    Text('Başlığı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                              if (!isCollapsed) ...[
+                                                const SizedBox(height: 8),
+                                                if (cards.isEmpty)
+                                                  Container(
+                                                    padding: const EdgeInsets.all(12),
+                                                    alignment: Alignment.center,
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withValues(alpha: 0.03),
+                                                      borderRadius: BorderRadius.circular(8),
+                                                      border: Border.all(color: Colors.white10),
+                                                    ),
+                                                    child: const Text(
+                                                      'Bu başlıkta henüz kart yok. Kart sürükleyip bırakabilirsiniz.',
+                                                      style: TextStyle(color: Colors.white38, fontSize: 11.5, fontStyle: FontStyle.italic),
+                                                    ),
+                                                  )
+                                                else
+                                                  GridView.builder(
+                                                    shrinkWrap: true,
+                                                    physics: const NeverScrollableScrollPhysics(),
+                                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                                      crossAxisCount: 2,
+                                                      crossAxisSpacing: 12.0,
+                                                      mainAxisSpacing: 12.0,
+                                                      childAspectRatio: 1.1,
+                                                    ),
+                                                    itemCount: cards.length,
+                                                    itemBuilder: (context, index) {
+                                                      final card = cards[index];
+                                                      return LongPressDraggable<Flashcard>(
+                                                        data: card,
+                                                        delay: const Duration(milliseconds: 180),
+                                                        feedback: Material(
+                                                          elevation: 12,
+                                                          color: Colors.transparent,
+                                                          borderRadius: BorderRadius.circular(AppRadius.medium),
+                                                          child: SizedBox(
+                                                            width: (MediaQuery.of(context).size.width - 44) / 2,
+                                                            height: 140,
+                                                            child: Transform.scale(
+                                                              scale: 1.05,
+                                                              child: Opacity(
+                                                                opacity: 0.92,
+                                                                child: FlipCardWidget(
+                                                                  flashcard: card,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        childWhenDragging: Opacity(
+                                                          opacity: 0.25,
+                                                          child: FlipCardWidget(
+                                                            flashcard: card,
+                                                            onOptionsTap: () {},
+                                                          ),
+                                                        ),
+                                                        child: FlipCardWidget(
+                                                          flashcard: card,
+                                                          onOptionsTap: () => _showFlashcardOptions(card),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                              ],
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                },
+                              )
+                            : ListView.builder(
+                                physics: const BouncingScrollPhysics(),
+                                itemCount: displayEntries.length,
+                                itemBuilder: (context, gIndex) {
+                                  final entry = displayEntries[gIndex];
+                                  final groupTitle = entry.key;
+                                  final cards = entry.value;
+                                  final isCollapsed = activeCollapsed.contains(groupTitle);
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 14.0),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // Header Row
+                                        InkWell(
                                           onTap: () {
                                             setSheetState(() {
                                               if (isCollapsed) {
@@ -1084,18 +1353,15 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                             });
                                           },
                                           borderRadius: BorderRadius.circular(8),
-                                          child: AnimatedContainer(
-                                            duration: const Duration(milliseconds: 200),
-                                            height: 28,
+                                          child: Container(
+                                            height: 32,
                                             padding: const EdgeInsets.symmetric(horizontal: 8),
                                             decoration: BoxDecoration(
-                                              color: isHovering
-                                                  ? const Color(0xFF14B8A6).withValues(alpha: 0.3)
-                                                  : const Color(0xFF14B8A6).withValues(alpha: 0.12),
+                                              color: const Color(0xFF14B8A6).withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(8),
                                               border: Border.all(
-                                                color: isHovering ? const Color(0xFF14B8A6) : const Color(0xFF14B8A6).withValues(alpha: 0.25),
-                                                width: isHovering ? 2 : 0.8,
+                                                color: const Color(0xFF14B8A6).withValues(alpha: 0.25),
+                                                width: 0.8,
                                               ),
                                             ),
                                             child: Row(
@@ -1112,11 +1378,11 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                                       const SizedBox(width: 4),
                                                       Expanded(
                                                         child: Text(
-                                                          isHovering ? '"$groupTitle" grubuna taşı' : groupTitle,
-                                                          style: TextStyle(
+                                                          groupTitle,
+                                                          style: const TextStyle(
                                                             fontSize: 12.5,
                                                             fontWeight: FontWeight.bold,
-                                                            color: isHovering ? const Color(0xFF14B8A6) : Colors.white,
+                                                            color: Colors.white,
                                                           ),
                                                           maxLines: 1,
                                                           overflow: TextOverflow.ellipsis,
@@ -1131,7 +1397,11 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                                         ),
                                                         child: Text(
                                                           '${cards.length}',
-                                                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF14B8A6)),
+                                                          style: const TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Color(0xFF14B8A6),
+                                                          ),
                                                         ),
                                                       ),
                                                     ],
@@ -1147,61 +1417,33 @@ class _PhotoNotesCategoryScreenState extends State<PhotoNotesCategoryScreen> {
                                               ],
                                             ),
                                           ),
-                                        );
-                                      },
-                                    ),
-                                    if (!isCollapsed) ...[
-                                      const SizedBox(height: 8),
-                                      // Grid of Cards under this Group Header
-                                      GridView.builder(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: 2,
-                                          crossAxisSpacing: 12.0,
-                                          mainAxisSpacing: 12.0,
-                                          childAspectRatio: 1.1,
                                         ),
-                                        itemCount: cards.length,
-                                        itemBuilder: (context, index) {
-                                          final card = cards[index];
-                                          return LongPressDraggable<Flashcard>(
-                                            data: card,
-                                            feedback: Material(
-                                              elevation: 8,
-                                              color: Colors.transparent,
-                                              borderRadius: BorderRadius.circular(AppRadius.medium),
-                                              child: SizedBox(
-                                                width: (MediaQuery.of(context).size.width - 44) / 2,
-                                                height: 140,
-                                                child: Opacity(
-                                                  opacity: 0.9,
-                                                  child: FlipCardWidget(
-                                                    flashcard: card,
-                                                  ),
-                                                ),
-                                              ),
+                                        if (!isCollapsed) ...[
+                                          const SizedBox(height: 8),
+                                          GridView.builder(
+                                            shrinkWrap: true,
+                                            physics: const NeverScrollableScrollPhysics(),
+                                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                              crossAxisCount: 2,
+                                              crossAxisSpacing: 12.0,
+                                              mainAxisSpacing: 12.0,
+                                              childAspectRatio: 1.1,
                                             ),
-                                            childWhenDragging: Opacity(
-                                              opacity: 0.25,
-                                              child: FlipCardWidget(
+                                            itemCount: cards.length,
+                                            itemBuilder: (context, index) {
+                                              final card = cards[index];
+                                              return FlipCardWidget(
                                                 flashcard: card,
-                                                onOptionsTap: () {},
-                                              ),
-                                            ),
-                                            child: FlipCardWidget(
-                                              flashcard: card,
-                                              onOptionsTap: () => _showFlashcardOptions(card),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
+                                                onOptionsTap: () => _showFlashcardOptions(card),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
                   ),
                 ],
               ),

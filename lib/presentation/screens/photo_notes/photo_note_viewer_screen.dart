@@ -22,7 +22,15 @@ import '../../widgets/image_cropper_dialog.dart';
 
 class PhotoNoteViewerScreen extends StatefulWidget {
   final String noteId;
-  const PhotoNoteViewerScreen({super.key, required this.noteId});
+  final String? initialSearchQuery;
+  final int? initialImageIndex;
+
+  const PhotoNoteViewerScreen({
+    super.key,
+    required this.noteId,
+    this.initialSearchQuery,
+    this.initialImageIndex,
+  });
 
   @override
   State<PhotoNoteViewerScreen> createState() => _PhotoNoteViewerScreenState();
@@ -55,6 +63,650 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   final Map<int, String> _customAccordionTitles = {};
   String? _activeFocusedSecKey;
   double _noteOverlayHeight = 150.0; // Draggable height of bottom note overlay
+
+  // Search in preview note overlay state
+  bool _isSearchingPreview = false;
+  final TextEditingController _previewSearchController = TextEditingController();
+  final FocusNode _previewSearchFocusNode = FocusNode();
+  String _previewSearchQuery = '';
+  int _previewCurrentMatchIndex = 0;
+  final ScrollController _overlayScrollController = ScrollController();
+  final Map<int, GlobalKey> _sectionKeys = {};
+  GlobalKey _activeMatchKey = GlobalKey();
+
+  GlobalKey _getSectionKey(int sectionIndex) {
+    return _sectionKeys.putIfAbsent(sectionIndex, () => GlobalKey());
+  }
+
+  String _normalizeForSearch(String s) {
+    return s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'ı')
+        .replaceAll('İ', 'i')
+        .replaceAll('â', 'a')
+        .replaceAll('Â', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('Î', 'i')
+        .replaceAll('û', 'u')
+        .replaceAll('Û', 'u')
+        .toLowerCase();
+  }
+
+  String _toDiacriticInsensitive(String s) {
+    return s
+        .replaceAll('İ', 'i')
+        .replaceAll('I', 'i')
+        .replaceAll('ı', 'i')
+        .replaceAll('ğ', 'g')
+        .replaceAll('Ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('Ü', 'u')
+        .replaceAll('ş', 's')
+        .replaceAll('Ş', 's')
+        .replaceAll('ö', 'o')
+        .replaceAll('Ö', 'o')
+        .replaceAll('ç', 'c')
+        .replaceAll('Ç', 'c')
+        .replaceAll('â', 'a')
+        .replaceAll('Â', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('Î', 'i')
+        .replaceAll('û', 'u')
+        .replaceAll('Û', 'u')
+        .toLowerCase();
+  }
+
+  List<_PreviewSearchMatch> _getPreviewMatches(List<String> sections, String query) {
+    if (query.trim().isEmpty) return [];
+    final qNorm = _normalizeForSearch(query.trim());
+    final qLoose = _toDiacriticInsensitive(query.trim());
+    final List<_PreviewSearchMatch> matches = [];
+
+    for (int sIndex = 0; sIndex < sections.length; sIndex++) {
+      final text = sections[sIndex];
+      final foldedText = _normalizeForSearch(text);
+      int start = 0;
+      while (start < foldedText.length) {
+        final idx = foldedText.indexOf(qNorm, start);
+        if (idx == -1) break;
+        matches.add(_PreviewSearchMatch(
+          sectionIndex: sIndex,
+          start: idx,
+          end: (idx + qNorm.length).clamp(0, text.length),
+        ));
+        start = idx + qNorm.length;
+      }
+    }
+
+    if (matches.isEmpty && qLoose.isNotEmpty) {
+      for (int sIndex = 0; sIndex < sections.length; sIndex++) {
+        final text = sections[sIndex];
+        final looseText = _toDiacriticInsensitive(text);
+        int start = 0;
+        while (start < looseText.length) {
+          final idx = looseText.indexOf(qLoose, start);
+          if (idx == -1) break;
+          matches.add(_PreviewSearchMatch(
+            sectionIndex: sIndex,
+            start: idx,
+            end: (idx + qLoose.length).clamp(0, text.length),
+          ));
+          start = idx + qLoose.length;
+        }
+      }
+    }
+
+    return matches;
+  }
+
+  void _togglePreviewSearch(List<String> sections) {
+    setState(() {
+      _isSearchingPreview = !_isSearchingPreview;
+      if (_isSearchingPreview) {
+        _showUI = true;
+        if (_noteOverlayHeight < 200) {
+          _noteOverlayHeight = 220;
+        }
+        _previewCurrentMatchIndex = 0;
+        _activeMatchKey = GlobalKey();
+      } else {
+        _previewSearchController.clear();
+        _previewSearchQuery = '';
+        _previewCurrentMatchIndex = 0;
+      }
+    });
+    if (_isSearchingPreview) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _previewSearchFocusNode.requestFocus();
+        if (_previewSearchController.text.isNotEmpty) {
+          _previewSearchController.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: _previewSearchController.text.length,
+          );
+        }
+      });
+    }
+  }
+
+  void _closePreviewSearch() {
+    setState(() {
+      _isSearchingPreview = false;
+      _previewSearchController.clear();
+      _previewSearchQuery = '';
+      _previewCurrentMatchIndex = 0;
+      _activeMatchKey = GlobalKey();
+    });
+  }
+
+  void _scrollToActiveMatch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _activeMatchKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          alignment: 0.5,
+        );
+      }
+    });
+  }
+
+  Widget _buildHighlightedSectionText({
+    required int sectionIndex,
+    required String text,
+    required List<_PreviewSearchMatch> matches,
+    required int currentMatchIndex,
+  }) {
+    final secKey = _getSectionKey(sectionIndex);
+
+    if (text.isEmpty) {
+      return Container(
+        key: secKey,
+        child: const Text(
+          '---',
+          style: TextStyle(color: Colors.white38, fontSize: 13, height: 1.4, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+
+    if (!_isSearchingPreview || _previewSearchQuery.trim().isEmpty || matches.isEmpty) {
+      return Container(
+        key: secKey,
+        child: SelectableText(
+          text,
+          style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+        ),
+      );
+    }
+
+    final sectionMatches = <_IndexedMatch>[];
+    for (int i = 0; i < matches.length; i++) {
+      if (matches[i].sectionIndex == sectionIndex) {
+        sectionMatches.add(_IndexedMatch(globalIndex: i, match: matches[i]));
+      }
+    }
+
+    if (sectionMatches.isEmpty) {
+      return Container(
+        key: secKey,
+        child: SelectableText(
+          text,
+          style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+        ),
+      );
+    }
+
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final item in sectionMatches) {
+      final start = item.match.start;
+      final end = item.match.end;
+
+      if (start < lastEnd) continue;
+
+      if (start > lastEnd) {
+        spans.add(TextSpan(
+          text: text.substring(lastEnd, start),
+          style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+        ));
+      }
+
+      final isSelected = (item.globalIndex == currentMatchIndex);
+      final actualEnd = (end <= text.length) ? end : text.length;
+      final matchText = text.substring(start, actualEnd);
+
+      if (isSelected) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              key: _activeMatchKey,
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                matchText,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        spans.add(
+          TextSpan(
+            text: matchText,
+            style: const TextStyle(
+              backgroundColor: Color(0xFFFACC15),
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+        );
+      }
+
+      lastEnd = end;
+    }
+
+    if (lastEnd < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastEnd),
+        style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+      ));
+    }
+
+    return Container(
+      key: secKey,
+      child: Text.rich(
+        TextSpan(children: spans),
+      ),
+    );
+  }
+
+  List<_FolderCardSearchMatch> _getFolderMatches({
+    required List<PhotoNote> folderNotes,
+    required String currentNoteId,
+    required int currentImageIndex,
+    required String query,
+  }) {
+    if (query.trim().isEmpty) return [];
+    final qNorm = _normalizeForSearch(query.trim());
+    final qLoose = _toDiacriticInsensitive(query.trim());
+    final List<_FolderCardSearchMatch> results = [];
+
+    for (final note in folderNotes) {
+      final totalImages = note.imagePaths.length;
+      for (int imgIdx = 0; imgIdx < totalImages; imgIdx++) {
+        final isCurrentCardAndImage = (note.id == currentNoteId && imgIdx == currentImageIndex);
+        if (isCurrentCardAndImage) continue;
+
+        final rawText = (imgIdx < note.imageNotes.length && note.imageNotes[imgIdx].isNotEmpty)
+            ? note.imageNotes[imgIdx]
+            : (imgIdx == 0 ? note.note : '');
+        final sections = _parseSections(rawText);
+
+        bool matchedInTitle = false;
+        final titleFolded = _normalizeForSearch(note.title);
+        final titleLoose = _toDiacriticInsensitive(note.title);
+        if (titleFolded.contains(qNorm) || titleLoose.contains(qLoose)) {
+          matchedInTitle = true;
+        }
+
+        bool matchedInSections = false;
+        for (int sIdx = 0; sIdx < sections.length; sIdx++) {
+          final sectionText = sections[sIdx];
+          final folded = _normalizeForSearch(sectionText);
+          final loose = _toDiacriticInsensitive(sectionText);
+
+          int start = 0;
+          int count = 0;
+          int firstIdx = -1;
+
+          while (start < folded.length) {
+            final idx = folded.indexOf(qNorm, start);
+            if (idx == -1) break;
+            count++;
+            if (firstIdx == -1) firstIdx = idx;
+            start = idx + qNorm.length;
+          }
+
+          if (count == 0 && qLoose.isNotEmpty) {
+            start = 0;
+            while (start < loose.length) {
+              final idx = loose.indexOf(qLoose, start);
+              if (idx == -1) break;
+              count++;
+              if (firstIdx == -1) firstIdx = idx;
+              start = idx + qLoose.length;
+            }
+          }
+
+          if (count > 0 && firstIdx != -1) {
+            matchedInSections = true;
+            final snippetStart = (firstIdx - 35).clamp(0, sectionText.length);
+            final snippetEnd = (firstIdx + qNorm.length + 45).clamp(0, sectionText.length);
+            String snippet = sectionText.substring(snippetStart, snippetEnd).replaceAll('\n', ' ').trim();
+            if (snippetStart > 0) snippet = '...$snippet';
+            if (snippetEnd < sectionText.length) snippet = '$snippet...';
+
+            results.add(_FolderCardSearchMatch(
+              note: note,
+              imageIndex: imgIdx,
+              sectionIndex: sIdx,
+              snippet: snippet,
+              matchCount: count,
+            ));
+          }
+        }
+
+        if (matchedInTitle && !matchedInSections && imgIdx == 0) {
+          results.add(_FolderCardSearchMatch(
+            note: note,
+            imageIndex: 0,
+            sectionIndex: 0,
+            snippet: 'Kart Başlığı: ${note.title}',
+            matchCount: 1,
+          ));
+        }
+      }
+    }
+    return results;
+  }
+
+  void _showFolderSearchResultsSheet({
+    required BuildContext context,
+    required String categoryName,
+    required String query,
+    required List<_FolderCardSearchMatch> folderMatches,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF0F172A),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(
+                  top: BorderSide(color: Color(0xFF14B8A6), width: 2),
+                  left: BorderSide(color: Colors.white12, width: 1),
+                  right: BorderSide(color: Colors.white12, width: 1),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Center(
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 10, bottom: 6),
+                      width: 44,
+                      height: 4.5,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2.5),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.folder_open_rounded, color: Color(0xFFF59E0B), size: 22),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                categoryName.isEmpty ? 'Klasördeki Diğer Eşleşmeler' : '"$categoryName" Klasöründeki Eşleşmeler',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                '${folderMatches.length} farklı kart/bölümde bulundu',
+                                style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(color: Colors.white10, height: 1),
+                  Expanded(
+                    child: folderMatches.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'Bu klasördeki diğer kartlarda eşleşme bulunamadı.',
+                              style: TextStyle(color: Colors.white38, fontSize: 13),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: folderMatches.length,
+                            itemBuilder: (context, index) {
+                              final item = folderMatches[index];
+                              final cardImgPath = (item.imageIndex < item.note.imagePaths.length)
+                                  ? item.note.imagePaths[item.imageIndex]
+                                  : item.note.imagePath;
+                              final isQuestion = (item.imageIndex < item.note.questionFlags.length)
+                                  ? item.note.questionFlags[item.imageIndex]
+                                  : false;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E293B),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.white12),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: SizedBox(
+                                        width: 58,
+                                        height: 58,
+                                        child: File(cardImgPath).existsSync()
+                                            ? Image.file(
+                                                File(cardImgPath),
+                                                fit: BoxFit.cover,
+                                              )
+                                            : const ColoredBox(
+                                                color: Colors.black26,
+                                                child: Icon(Icons.image_not_supported_rounded, color: Colors.white38, size: 24),
+                                              ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  item.note.title,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 13.5,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: isQuestion
+                                                      ? const Color(0xFFF59E0B).withValues(alpha: 0.2)
+                                                      : const Color(0xFF14B8A6).withValues(alpha: 0.2),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  isQuestion
+                                                      ? '❓ Soru ${item.imageIndex + 1}'
+                                                      : 'Görsel ${item.imageIndex + 1}',
+                                                  style: TextStyle(
+                                                    color: isQuestion ? const Color(0xFFF59E0B) : const Color(0xFF14B8A6),
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          _buildSnippetTextSpan(item.snippet, query),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF14B8A6),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        minimumSize: Size.zero,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(ctx);
+                                        _navigateToTargetCard(item.note.id, item.imageIndex, query);
+                                      },
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text('Karta Git', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                                          SizedBox(width: 2),
+                                          Icon(Icons.arrow_forward_ios_rounded, size: 11),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSnippetTextSpan(String snippet, String query) {
+    if (query.trim().isEmpty) {
+      return Text(
+        snippet,
+        style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      );
+    }
+
+    final q = query.replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase();
+    final folded = snippet.replaceAll('İ', 'i').replaceAll('I', 'ı').toLowerCase();
+    final spans = <InlineSpan>[];
+    int start = 0;
+
+    while (start < folded.length) {
+      final idx = folded.indexOf(q, start);
+      if (idx == -1) break;
+      if (idx > start) {
+        spans.add(TextSpan(
+          text: snippet.substring(start, idx),
+          style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+        ));
+      }
+      final end = (idx + q.length <= snippet.length) ? idx + q.length : snippet.length;
+      spans.add(
+        TextSpan(
+          text: snippet.substring(idx, end),
+          style: const TextStyle(
+            backgroundColor: Color(0xFFFACC15),
+            color: Colors.black,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            height: 1.3,
+          ),
+        ),
+      );
+      start = end;
+    }
+
+    if (start < snippet.length) {
+      spans.add(TextSpan(
+        text: snippet.substring(start),
+        style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+      ));
+    }
+
+    return Text.rich(
+      TextSpan(children: spans),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  void _navigateToTargetCard(String targetNoteId, int targetImageIndex, String query) {
+    if (targetNoteId == widget.noteId) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(targetImageIndex);
+      }
+      setState(() {
+        _currentPage = targetImageIndex;
+        _isSearchingPreview = true;
+        _previewSearchQuery = query;
+        _previewSearchController.text = query;
+        _previewCurrentMatchIndex = 0;
+      });
+      _scrollToActiveMatch();
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PhotoNoteViewerScreen(
+            noteId: targetNoteId,
+            initialSearchQuery: query,
+            initialImageIndex: targetImageIndex,
+          ),
+        ),
+      );
+    }
+  }
 
   void _editAccordionTitle(int index) {
     final currentTitle = _customAccordionTitles[index] ?? 'Bilgi Kartları';
@@ -604,8 +1256,17 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(initialPage: 0);
+    _currentPage = widget.initialImageIndex ?? 0;
+    _pageController = PageController(initialPage: _currentPage);
     WakelockHelper.enable();
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.trim().isNotEmpty) {
+      _isSearchingPreview = true;
+      _previewSearchQuery = widget.initialSearchQuery!;
+      _previewSearchController.text = widget.initialSearchQuery!;
+      if (_noteOverlayHeight < 200) {
+        _noteOverlayHeight = 220;
+      }
+    }
   }
 
   TransformationController _getTransformController(int page) {
@@ -620,6 +1281,9 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
   void dispose() {
     _autoScrollTimer?.cancel();
     WakelockHelper.disable();
+    _previewSearchController.dispose();
+    _previewSearchFocusNode.dispose();
+    _overlayScrollController.dispose();
     for (final ctrl in _transformControllers.values) {
       ctrl.removeListener(_onTransformationChanged);
       ctrl.dispose();
@@ -1926,9 +2590,15 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
         }
 
         final note = notes[noteIndex];
-        final folderNotes = note.category.isEmpty
+        final rootCategory = note.category.split(' / ').first.trim();
+        final folderNotes = rootCategory.isEmpty
             ? provider.photoNotes
-            : provider.photoNotes.where((n) => n.category.trim() == note.category.trim() || n.category.startsWith('${note.category} / ')).toList();
+            : provider.photoNotes.where((n) {
+                final nRoot = n.category.split(' / ').first.trim();
+                final inMain = (nRoot.toLowerCase() == rootCategory.toLowerCase());
+                final inAdd = n.additionalCategories.any((c) => c.split(' / ').first.trim().toLowerCase() == rootCategory.toLowerCase());
+                return inMain || inAdd;
+              }).toList();
 
         final totalImages = note.imagePaths.length;
         final currentImgIndex = (_currentPage < totalImages) ? _currentPage : 0;
@@ -1939,10 +2609,30 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 : (currentImgIndex == 0 ? note.note : ''));
         final overlaySections = _parseSections(imageNoteText);
 
-        return Scaffold(
-          backgroundColor: Colors.black,
-          body: Stack(
-            children: [
+        final previewMatches = _getPreviewMatches(overlaySections, _previewSearchQuery);
+        if (_previewCurrentMatchIndex >= previewMatches.length && previewMatches.isNotEmpty) {
+          _previewCurrentMatchIndex = previewMatches.length - 1;
+        }
+
+        final folderMatches = _getFolderMatches(
+          folderNotes: folderNotes,
+          currentNoteId: note.id,
+          currentImageIndex: currentImgIndex,
+          query: _previewSearchQuery,
+        );
+
+        return CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyF, control: true): () => _togglePreviewSearch(overlaySections),
+            const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () => _togglePreviewSearch(overlaySections),
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              resizeToAvoidBottomInset: false,
+              backgroundColor: Colors.black,
+              body: Stack(
+                children: [
               // Full Screen Zoomable & Pannable Image PageView with Swipe Gestures
               PageView.builder(
                 controller: _pageController,
@@ -1985,7 +2675,11 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           }
                         },
                         child: GestureDetector(
-                          onTap: () => setState(() => _showUI = !_showUI),
+                          onTap: () {
+                            if (!_isSearchingPreview) {
+                              setState(() => _showUI = !_showUI);
+                            }
+                          },
                           onDoubleTapDown: (details) => _handleDoubleTap(details, idx, constraints),
                           onDoubleTap: () {}, // required to trigger onDoubleTapDown
                           child: InteractiveViewer(
@@ -2018,158 +2712,358 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                 right: 0,
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
-                  opacity: _showUI ? 1.0 : 0.0,
+                  opacity: (_showUI || _isSearchingPreview) ? 1.0 : 0.0,
                   child: IgnorePointer(
-                    ignoring: !_showUI,
+                    ignoring: !_showUI && !_isSearchingPreview,
                     child: SafeArea(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        color: Colors.black.withValues(alpha: 0.6),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                            const SizedBox(width: 4),
-                            Builder(
-                              builder: (context) {
-                                final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
-                                return Expanded(
-                                  child: Text(
-                                    isQuestion
-                                        ? '${note.title} • ❓ Soru ${currentImgIndex + 1} / $totalImages'
-                                        : '${note.title} • Görsel ${currentImgIndex + 1} / $totalImages',
-                                    style: TextStyle(
-                                      color: isQuestion ? const Color(0xFFF59E0B) : Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                      child: _isSearchingPreview
+                          ? Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                                border: const Border(bottom: BorderSide(color: Color(0xFF14B8A6), width: 1.5)),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Row 1: Search input and controls
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white70, size: 20),
+                                          tooltip: 'Aramayı Kapat',
+                                          onPressed: _closePreviewSearch,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: _previewSearchController,
+                                            focusNode: _previewSearchFocusNode,
+                                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                                            decoration: const InputDecoration(
+                                              hintText: 'Önizleme notunda ara... (Ctrl+F)',
+                                              hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                                              border: InputBorder.none,
+                                              isDense: true,
+                                              contentPadding: EdgeInsets.symmetric(vertical: 6),
+                                            ),
+                                            onChanged: (val) {
+                                              setState(() {
+                                                _previewSearchQuery = val;
+                                                _previewCurrentMatchIndex = 0;
+                                                _activeMatchKey = GlobalKey();
+                                              });
+                                              _scrollToActiveMatch();
+                                            },
+                                          ),
+                                        ),
+                                        if (_previewSearchController.text.isNotEmpty)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: previewMatches.isNotEmpty
+                                                  ? const Color(0xFF14B8A6).withValues(alpha: 0.2)
+                                                  : Colors.redAccent.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: previewMatches.isNotEmpty ? const Color(0xFF14B8A6) : Colors.redAccent,
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              previewMatches.isNotEmpty
+                                                  ? '${_previewCurrentMatchIndex + 1}/${previewMatches.length}'
+                                              : '0/0',
+                                              style: TextStyle(
+                                                color: previewMatches.isNotEmpty ? const Color(0xFF14B8A6) : Colors.redAccent,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white70, size: 22),
+                                          tooltip: 'Önceki Eşleşme',
+                                          onPressed: previewMatches.isNotEmpty
+                                              ? () {
+                                                  setState(() {
+                                                    _previewCurrentMatchIndex = (_previewCurrentMatchIndex - 1 + previewMatches.length) % previewMatches.length;
+                                                    _activeMatchKey = GlobalKey();
+                                                  });
+                                                  _scrollToActiveMatch();
+                                                }
+                                              : null,
+                                        ),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white70, size: 22),
+                                          tooltip: 'Sonraki Eşleşme',
+                                          onPressed: previewMatches.isNotEmpty
+                                              ? () {
+                                                  setState(() {
+                                                    _previewCurrentMatchIndex = (_previewCurrentMatchIndex + 1) % previewMatches.length;
+                                                    _activeMatchKey = GlobalKey();
+                                                  });
+                                                  _scrollToActiveMatch();
+                                                }
+                                              : null,
+                                        ),
+                                        IconButton(
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                          icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+                                          tooltip: 'Kapat',
+                                          onPressed: _closePreviewSearch,
+                                        ),
+                                      ],
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                );
-                              },
-                            ),
-                            Builder(
-                              builder: (context) {
-                                final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
-                                return IconButton(
-                                  icon: Icon(
-                                    isQuestion ? Icons.help : Icons.help_outline_rounded,
-                                    color: isQuestion ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
-                                    size: 22,
+                                  // Row 2: Sub-toolbar for folder matches
+                                  if (_previewSearchController.text.isNotEmpty)
+                                    InkWell(
+                                      onTap: () {
+                                        _showFolderSearchResultsSheet(
+                                          context: context,
+                                          categoryName: note.category,
+                                          query: _previewSearchQuery,
+                                          folderMatches: folderMatches,
+                                        );
+                                      },
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
+                                        decoration: BoxDecoration(
+                                          color: folderMatches.isNotEmpty
+                                              ? const Color(0xFFF59E0B).withValues(alpha: 0.15)
+                                              : Colors.black26,
+                                          border: Border(
+                                            top: BorderSide(
+                                              color: folderMatches.isNotEmpty
+                                                  ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
+                                                  : Colors.white10,
+                                              width: 0.8,
+                                            ),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.folder_open_rounded,
+                                              color: folderMatches.isNotEmpty ? const Color(0xFFF59E0B) : Colors.white38,
+                                              size: 16,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                folderMatches.isNotEmpty
+                                                    ? 'Klasördeki diğer ${folderMatches.length} kartta da eşleşme var'
+                                                    : 'Klasördeki diğer kartlarda sonuç yok (tıklayarak inceleyin)',
+                                                style: TextStyle(
+                                                  color: folderMatches.isNotEmpty ? const Color(0xFFF59E0B) : Colors.white54,
+                                                  fontSize: 12,
+                                                  fontWeight: folderMatches.isNotEmpty ? FontWeight.bold : FontWeight.normal,
+                                                ),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: folderMatches.isNotEmpty ? const Color(0xFFF59E0B) : Colors.white12,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${folderMatches.length} Kart',
+                                                style: TextStyle(
+                                                  color: folderMatches.isNotEmpty ? Colors.black : Colors.white60,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.arrow_forward_ios_rounded,
+                                              size: 11,
+                                              color: folderMatches.isNotEmpty ? const Color(0xFFF59E0B) : Colors.white38,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            )
+                          : Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              color: Colors.black.withValues(alpha: 0.6),
+                              child: Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                    onPressed: () => Navigator.pop(context),
                                   ),
-                                  tooltip: '+ Soru Görseli Ekle / İşaretle',
-                                  onPressed: () {
-                                    _showAddQuestionOptionsSheet(context, note, currentImgIndex, provider);
-                                  },
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            // Bilgi Kartları Icon
-                            IconButton(
-                              icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
-                              tooltip: 'Bilgi Kartları',
-                              onPressed: () {
-                                _showFlashcardsBottomSheet(context, note, cardIndex: currentImgIndex);
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            // Kalem / Edit Note Icon
-                            IconButton(
-                              icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
-                              tooltip: 'Notu Düzenle',
-                              onPressed: () {
-                                _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider);
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                              color: const Color(0xFF1E293B),
-                              onSelected: (val) {
-                                if (val == 'move_copy') {
-                                  showMoveOrCopyCardModal(
-                                    context: context,
-                                    note: note,
-                                    imageIndex: currentImgIndex,
-                                  );
-                                } else if (val == 'add_image') {
-                                  _pickAndAddExtraImage(note);
-                                } else if (val == 'replace_image') {
-                                  _showReplaceImagePicker(context, note, currentImgIndex);
-                                } else if (val == 'share') {
-                                  _shareImage(note);
-                                } else if (val == 'delete') {
-                                  _deleteNoteWithConfirmation(context, note, currentImgIndex, provider);
-                                }
-                              },
-                              itemBuilder: (ctx) => [
-                                const PopupMenuItem(
-                                  value: 'move_copy',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.drive_file_move_rounded, color: Color(0xFFF59E0B), size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Başka Üniteye Taşı / Kopyala', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                  const SizedBox(width: 4),
+                                  Builder(
+                                    builder: (context) {
+                                      final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+                                      return Expanded(
+                                        child: Text(
+                                          isQuestion
+                                              ? '${note.title} • ❓ Soru ${currentImgIndex + 1} / $totalImages'
+                                              : '${note.title} • Görsel ${currentImgIndex + 1} / $totalImages',
+                                          style: TextStyle(
+                                            color: isQuestion ? const Color(0xFFF59E0B) : Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  Builder(
+                                    builder: (context) {
+                                      final isQuestion = (currentImgIndex < note.questionFlags.length) ? note.questionFlags[currentImgIndex] : false;
+                                      return IconButton(
+                                        icon: Icon(
+                                          isQuestion ? Icons.help : Icons.help_outline_rounded,
+                                          color: isQuestion ? const Color(0xFFF59E0B) : const Color(0xFF38BDF8),
+                                          size: 22,
+                                        ),
+                                        tooltip: '+ Soru Görseli Ekle / İşaretle',
+                                        onPressed: () {
+                                          _showAddQuestionOptionsSheet(context, note, currentImgIndex, provider);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Bilgi Kartları Icon
+                                  IconButton(
+                                    icon: const Icon(Icons.style_rounded, color: Color(0xFF14B8A6), size: 22),
+                                    tooltip: 'Bilgi Kartları',
+                                    onPressed: () {
+                                      _showFlashcardsBottomSheet(context, note, cardIndex: currentImgIndex);
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Önizleme Arama Butonu
+                                  IconButton(
+                                    icon: const Icon(Icons.search_rounded, color: Colors.white, size: 22),
+                                    tooltip: 'Önizleme Notunda Ara (Ctrl+F)',
+                                    onPressed: () => _togglePreviewSearch(overlaySections),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Kalem / Edit Note Icon
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_note_rounded, color: Colors.amber, size: 24),
+                                    tooltip: 'Notu Düzenle',
+                                    onPressed: () {
+                                      _openFullScreenSectionEditor(context, currentImgIndex, 0, note, provider);
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  // Action menu for +Resim, Görseli Değiştir, Paylaş, Sil
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                                    color: const Color(0xFF1E293B),
+                                    onSelected: (val) {
+                                      if (val == 'move_copy') {
+                                        showMoveOrCopyCardModal(
+                                          context: context,
+                                          note: note,
+                                          imageIndex: currentImgIndex,
+                                        );
+                                      } else if (val == 'add_image') {
+                                        _pickAndAddExtraImage(note);
+                                      } else if (val == 'replace_image') {
+                                        _showReplaceImagePicker(context, note, currentImgIndex);
+                                      } else if (val == 'share') {
+                                        _shareImage(note);
+                                      } else if (val == 'delete') {
+                                        _deleteNoteWithConfirmation(context, note, currentImgIndex, provider);
+                                      }
+                                    },
+                                    itemBuilder: (ctx) => [
+                                      const PopupMenuItem(
+                                        value: 'move_copy',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.drive_file_move_rounded, color: Color(0xFFF59E0B), size: 18),
+                                            SizedBox(width: 8),
+                                            Text('Başka Üniteye Taşı / Kopyala', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'add_image',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 18),
+                                            SizedBox(width: 8),
+                                            Text('+ Görsel Ekle', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'replace_image',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.published_with_changes_rounded, color: Color(0xFF38BDF8), size: 18),
+                                            SizedBox(width: 8),
+                                            Text('Görseli Değiştir', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'share',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.share_rounded, color: Colors.white70, size: 18),
+                                            SizedBox(width: 8),
+                                            Text('Paylaş', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                                            SizedBox(width: 8),
+                                            Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                          ],
+                                        ),
+                                      ),
                                     ],
                                   ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'add_image',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.add_photo_alternate_rounded, color: Color(0xFF14B8A6), size: 18),
-                                      SizedBox(width: 8),
-                                      Text('+ Görsel Ekle', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'replace_image',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.published_with_changes_rounded, color: Color(0xFF38BDF8), size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Görseli Değiştir', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'share',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.share_rounded, color: Colors.white70, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Paylaş', style: TextStyle(color: Colors.white, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'delete',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
-                                      SizedBox(width: 8),
-                                      Text('Kartı Sil', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
                     ),
                   ),
                 ),
               ),
 
               // Bottom Semi-Transparent Scrollable Note Overlay Panel (Görsele Ait Not Penceresi)
-              if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty)
+              if (imageNoteText.isNotEmpty || overlaySections.isNotEmpty || _isSearchingPreview)
                 Positioned(
                   bottom: 0,
                   left: 0,
@@ -2187,7 +3081,10 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                           decoration: BoxDecoration(
                             color: const Color(0xFF0F172A).withValues(alpha: 0.85),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFF14B8A6).withValues(alpha: 0.7), width: 1.3),
+                            border: Border.all(
+                              color: _isSearchingPreview ? const Color(0xFFFACC15).withValues(alpha: 0.8) : const Color(0xFF14B8A6).withValues(alpha: 0.7),
+                              width: _isSearchingPreview ? 1.6 : 1.3,
+                            ),
                             boxShadow: const [
                               BoxShadow(color: Colors.black87, blurRadius: 12, offset: Offset(0, 4)),
                             ],
@@ -2217,11 +3114,11 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                       width: 44,
                                       height: 4.5,
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFF14B8A6),
+                                        color: _isSearchingPreview ? const Color(0xFFFACC15) : const Color(0xFF14B8A6),
                                         borderRadius: BorderRadius.circular(2.5),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: const Color(0xFF14B8A6).withValues(alpha: 0.5),
+                                            color: (_isSearchingPreview ? const Color(0xFFFACC15) : const Color(0xFF14B8A6)).withValues(alpha: 0.5),
                                             blurRadius: 4,
                                           ),
                                         ],
@@ -2236,22 +3133,133 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
                                   child: Scrollbar(
+                                    controller: _overlayScrollController,
                                     thumbVisibility: true,
                                     thickness: 3.5,
                                     radius: const Radius.circular(3),
                                     child: SingleChildScrollView(
+                                      controller: _overlayScrollController,
                                       physics: const BouncingScrollPhysics(),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
-                                            if (sIndex > 0) const SizedBox(height: 6),
-                                            Text(
-                                              overlaySections[sIndex].isEmpty ? '---' : overlaySections[sIndex],
-                                              style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                                          if (_isSearchingPreview && _previewSearchQuery.trim().isNotEmpty && folderMatches.isNotEmpty && previewMatches.isNotEmpty)
+                                            InkWell(
+                                              onTap: () {
+                                                _showFolderSearchResultsSheet(
+                                                  context: context,
+                                                  categoryName: rootCategory.isEmpty ? note.category : rootCategory,
+                                                  query: _previewSearchQuery,
+                                                  folderMatches: folderMatches,
+                                                );
+                                              },
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Container(
+                                                margin: const EdgeInsets.only(bottom: 10),
+                                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF1E293B),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.7)),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.folder_shared_rounded, color: Color(0xFFF59E0B), size: 16),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Bu dersteki diğer kartlarda ${folderMatches.length} sonuç bulundu',
+                                                        style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 12, fontWeight: FontWeight.bold),
+                                                      ),
+                                                    ),
+                                                    const Text(
+                                                      'Önizle →',
+                                                      style: TextStyle(color: Color(0xFF14B8A6), fontSize: 12, fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
-                                          ],
+                                          if (_isSearchingPreview && _previewSearchQuery.trim().isNotEmpty && previewMatches.isEmpty && folderMatches.isNotEmpty)
+                                            Container(
+                                              margin: const EdgeInsets.only(bottom: 12),
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF1E293B),
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(color: const Color(0xFFF59E0B), width: 1.2),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      const Icon(Icons.info_outline_rounded, color: Color(0xFFF59E0B), size: 18),
+                                                      const SizedBox(width: 6),
+                                                      Expanded(
+                                                        child: Text(
+                                                          'Bu görsel notunda "$_previewSearchQuery" bulunamadı.',
+                                                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    '💡 Şuraya da bakabilirsiniz: ${rootCategory.isEmpty ? "Diğer" : '"$rootCategory" dersindeki'} diğer ${folderMatches.length} kartta aradığınız kelime bulundu!',
+                                                    style: const TextStyle(color: Color(0xFFF59E0B), fontSize: 12.5, height: 1.3),
+                                                  ),
+                                                  const SizedBox(height: 10),
+                                                  SizedBox(
+                                                    width: double.infinity,
+                                                    child: ElevatedButton.icon(
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor: const Color(0xFF14B8A6),
+                                                        foregroundColor: Colors.white,
+                                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                      ),
+                                                      icon: const Icon(Icons.folder_open_rounded, size: 16),
+                                                      label: Text(
+                                                        'Diğer Kartlardaki Sonuçları Gör (${folderMatches.length}) →',
+                                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                                      ),
+                                                      onPressed: () {
+                                                        _showFolderSearchResultsSheet(
+                                                          context: context,
+                                                          categoryName: rootCategory.isEmpty ? note.category : rootCategory,
+                                                          query: _previewSearchQuery,
+                                                          folderMatches: folderMatches,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          if (overlaySections.isEmpty)
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(vertical: 8),
+                                              child: Text(
+                                                'Bu görsel için henüz not eklenmemiş.',
+                                                style: TextStyle(color: Colors.white38, fontSize: 13, fontStyle: FontStyle.italic),
+                                              ),
+                                            )
+                                          else
+                                            for (int sIndex = 0; sIndex < overlaySections.length; sIndex++) ...[
+                                              if (sIndex > 0) ...[
+                                                const SizedBox(height: 8),
+                                                Container(height: 1, color: Colors.white10),
+                                                const SizedBox(height: 8),
+                                              ],
+                                              _buildHighlightedSectionText(
+                                                sectionIndex: sIndex,
+                                                text: overlaySections[sIndex],
+                                                matches: previewMatches,
+                                                currentMatchIndex: _previewCurrentMatchIndex,
+                                              ),
+                                            ],
                                         ],
                                       ),
                                     ),
@@ -2265,13 +3273,51 @@ class _PhotoNoteViewerScreenState extends State<PhotoNoteViewerScreen> {
                     ),
                   ),
                 ),
-
-            ],
+              ],
+            ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
+}
+
+/// Helper model for preview search matches in PhotoNoteViewerScreen
+class _PreviewSearchMatch {
+  final int sectionIndex;
+  final int start;
+  final int end;
+  const _PreviewSearchMatch({
+    required this.sectionIndex,
+    required this.start,
+    required this.end,
+  });
+}
+
+class _IndexedMatch {
+  final int globalIndex;
+  final _PreviewSearchMatch match;
+  const _IndexedMatch({
+    required this.globalIndex,
+    required this.match,
+  });
+}
+
+class _FolderCardSearchMatch {
+  final PhotoNote note;
+  final int imageIndex;
+  final int sectionIndex;
+  final String snippet;
+  final int matchCount;
+
+  const _FolderCardSearchMatch({
+    required this.note,
+    required this.imageIndex,
+    required this.sectionIndex,
+    required this.snippet,
+    required this.matchCount,
+  });
 }
 
 /// Custom TextEditingController that highlights search query matches inline in the editor

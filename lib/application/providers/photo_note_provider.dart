@@ -917,15 +917,56 @@ class PhotoNoteProvider extends ChangeNotifier {
     if (savedGroupOrder is List) {
       final Map<String, List<Flashcard>> orderedMap = {};
       for (var g in savedGroupOrder) {
-        final gStr = g.toString();
-        if (map.containsKey(gStr)) {
-          orderedMap[gStr] = map.remove(gStr)!;
+        final gStr = g.toString().trim();
+        if (gStr.isNotEmpty) {
+          if (map.containsKey(gStr)) {
+            orderedMap[gStr] = map.remove(gStr)!;
+          } else {
+            orderedMap[gStr] = [];
+          }
         }
       }
       orderedMap.addAll(map);
       return orderedMap;
     }
     return map;
+  }
+
+  /// Add a new empty group heading for a category
+  Future<void> addFlashcardGroup(String categoryPath, String groupTitle) async {
+    final t = groupTitle.trim();
+    if (t.isEmpty) return;
+    final box = Hive.box(_boxName);
+    final savedGroupOrder = box.get('groups_order_$categoryPath');
+    final List<String> list = (savedGroupOrder is List) ? List<String>.from(savedGroupOrder) : [];
+    if (!list.contains(t)) {
+      list.add(t);
+      await box.put('groups_order_$categoryPath', list);
+      notifyListeners();
+    }
+  }
+
+  /// Delete a group heading and reassign its cards to fallback group
+  Future<void> deleteFlashcardGroup({
+    required String categoryPath,
+    required String groupTitle,
+    String fallbackGroup = 'Genel Bilgiler',
+  }) async {
+    final box = Hive.box(_boxName);
+    final savedGroupOrder = box.get('groups_order_$categoryPath');
+    if (savedGroupOrder is List) {
+      final list = List<String>.from(savedGroupOrder);
+      list.remove(groupTitle);
+      await box.put('groups_order_$categoryPath', list);
+    }
+
+    for (var card in _flashcards) {
+      if (card.groupTitle.trim() == groupTitle.trim()) {
+        final updated = card.copyWith(groupTitle: fallbackGroup);
+        await box.put(card.id, updated.toMap());
+      }
+    }
+    await loadPhotoNotes();
   }
 
   /// Reorder flashcard group headers for a category
